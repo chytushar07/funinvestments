@@ -70,7 +70,8 @@ export class Store extends DurableObject {
       const calls = [];
       const call = (name, args) => { const r = dispatch(this.state, name, args, 'claude'); calls.push(name); return r; };
       const session = request.headers.get('mcp-session-id') || crypto.randomUUID();
-      const out = Array.isArray(msg) ? msg.map(m => mcpHandle(m, call)).filter(Boolean) : mcpHandle(msg, call);
+      const website = `${url.origin}/#key=${this.key}`;
+      const out = Array.isArray(msg) ? msg.map(m => mcpHandle(m, call, { website })).filter(Boolean) : mcpHandle(msg, call, { website });
       if (calls.length) await this.save();
       if (!out || (Array.isArray(out) && !out.length)) return new Response(null, { status: 202, headers: CORS });
       return json(out, 200, { 'mcp-session-id': session });

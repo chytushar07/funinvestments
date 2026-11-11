@@ -370,6 +370,22 @@ function BasketStocks({ b }) {
 
 
 const lockTap = () => toast('Editing rules is a Pro feature', { action: 'See plans', go: 'pricing' });
+// Rating cutoffs: how many warnings make a stock Buy, Hold or Sell. Pro edits with − / +; Free reads them.
+function RatingCutoffs({ rules, target, pro }) {
+  const c = { buyBelow: 4, sellAbove: 8, ...(rules.cutoffs || {}) };
+  const [v, setV] = useState(null);
+  const cur = v || c;
+  const dirty = v && (v.buyBelow !== c.buyBelow || v.sellAbove !== c.sellAbove);
+  const bad = cur.buyBelow > cur.sellAbove;
+  const save = async () => { const r = await act('set_rating_cutoffs', { ...target, buy_below: cur.buyBelow, sell_above: cur.sellAbove }, { ok: d => target.scope === 'defaults' ? 'Saved · stock ratings updated' : `Saved · ${d.changed.length} rating change${d.changed.length === 1 ? '' : 's'}` }); if (r?.ok) setV(null); };
+  return html`<div class="card cutoffs"><div class="row between"><b>Rating cutoffs <${Info} k="warnings"/></b>${pro ? null : html`<span class="faint" style="font-size:12px">🔒 read-only</span>`}</div>
+    <span class="muted" style="font-size:13px">Buy: fewer than ${cur.buyBelow} warnings · Hold: ${cur.buyBelow}–${cur.sellAbove} · Sell: more than ${cur.sellAbove}. A red must-pass rule is always Sell.</span>
+    <div class="li"><span class="grow t">Buy below</span>${pro ? html`<${Stepper} label="Buy below" value=${cur.buyBelow} min=${1} max=${26} unit=" warnings" onChange=${n => setV(x => ({ ...(x || c), buyBelow: n }))}/>` : html`<b class="num">${cur.buyBelow} warnings</b>`}</div>
+    <div class="li"><span class="grow t">Sell above</span>${pro ? html`<${Stepper} label="Sell above" value=${cur.sellAbove} min=${1} max=${26} unit=" warnings" onChange=${n => setV(x => ({ ...(x || c), sellAbove: n }))}/>` : html`<b class="num">${cur.sellAbove} warnings</b>`}</div>
+    ${bad && html`<span class="down" style="font-size:13px">"Buy below" can't be more than "Sell above".</span>`}
+    ${dirty && html`<div class="row" style="gap:8px"><button class="btn primary" style="flex:1" disabled=${bad} onClick=${save}>Save cutoffs</button><button class="btn ghost" onClick=${() => setV(null)}>Undo</button></div>`}</div>`;
+}
+
 function BasketRules({ b }) {
   const S = store.S;
   const pro = S.plan === 'pro';
@@ -380,6 +396,7 @@ function BasketRules({ b }) {
   const dirty = lim && Object.keys(L).some(k => lim[k] !== L[k]);
   return html`<div class="stack" style="margin-top:14px">
     ${pro ? html`<div class="card rulehelp"><b>Edit this basket's rules</b><span class="muted">Tap a rule to change its limits · use the switch to turn it off · basket limits are at the bottom. Changes apply to this basket only, and Claude can make them too. <button class="linkbtn" style="font-size:13px;padding:0" onClick=${() => go('rules')}>Default rules for new baskets →</button></span></div>` : html`<div class="row between proline"><span>🔒 Editing rules is a Pro feature</span><button class="linkbtn" onClick=${goPlans}>See plans</button></div>`}
+    <${RatingCutoffs} rules=${b.rules} target=${{ basket_id: b.id }} pro=${pro}/>
     <div class="row between"><span class="eyebrow">13 safety rules · this basket only <${Info} k="warnings"/></span>${pro ? html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Reset rules to default?', body: 'Thresholds, switches and limits go back to your default rules for this basket.', confirm: 'Reset', onConfirm: () => act('reset_rules', { basket_id: b.id }, { ok: 'Rules reset' }) })}>Reset</button>` : html`<button class="linkbtn" onClick=${() => go('rules')}>Default rules</button>`}</div>
     <div class="card list" style="padding:2px 16px">${b.rules.metrics.map(r => {
       const red = b.stocks.filter(s => s.reds.includes(r.id)).length, amber = b.stocks.filter(s => s.ambers.includes(r.id)).length;
@@ -531,6 +548,7 @@ export function DefaultRules() {
     ${store.ui.draftNew && html`<div class="card tourcta"><div class="grow"><b>Your new basket is waiting</b><div class="muted">It starts with these rules.</div></div><button class="btn primary" onClick=${() => { const d = store.ui.draftNew; store.ui.draftNew = null; openSheet({ type: 'new', draft: d }); }}>Back to it</button></div>`}
     ${pro ? html`<div class="card rulehelp" style="margin-top:12px"><b>Your rules for every new basket</b>
       <span class="muted">These 13 checks rate every stock on Home and Explore, and each new basket starts with them. A basket can then have its own: open it and tap <b>⚙ Edit rules</b>. Tap a rule to change its limits; the switch turns it off.</span></div>` : html`<div class="row between proline" style="margin-top:12px"><span>🔒 Editing rules is a Pro feature</span><button class="linkbtn" onClick=${goPlans}>See plans</button></div>`}
+    <section class="section"><${RatingCutoffs} rules=${R} target=${{ scope: 'defaults' }} pro=${pro}/></section>
     <section class="section"><div class="section-head"><span class="eyebrow">13 safety rules · defaults <${Info} k="warnings"/></span>
       ${pro && html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Reset default rules?', body: 'The 13 rules go back to the original limits and switches. Your baskets keep their own rules.', confirm: 'Reset', onConfirm: () => act('reset_rules', { scope: 'defaults' }, { ok: 'Default rules reset' }) })}>Reset</button>`}</div>
       <div class="card list" style="padding:2px 16px">${R.metrics.map(r => html`<div class="li" key=${r.id}>
@@ -760,7 +778,12 @@ export function ConnectClaude() {
   const hide = t => (show ? t : t.split(S.user.apiKey).join(S.user.apiKey.slice(0, 6) + '••••••'));
   return html`<section class="section" id="connect-claude"><div class="section-head"><h2>${I.spark} Connect Claude</h2></div>
     <${ClaudeStatus}/>
+    ${hosted && html`<div class="card stack spacecard" style="gap:8px">
+      <span>${S.lastClaudeCall?.time ? `Claude last used this space ${ago(S.lastClaudeCall.time)}.` : 'Claude hasn\'t used this space yet.'} <${Info} k="privatespace"/></span>
+      <span class="muted" style="font-size:13px">Each browser has its own space. Claude sees the baskets of the space whose URL you gave it (step 2 below). To see this space on another device, open this link there:</span>
+      <button class="btn small ghost" style="align-self:flex-start" onClick=${() => copy(location.origin + location.pathname + '#key=' + S.user.apiKey)}>Copy link to this space</button></div>`}
     ${hosted && S.claudeConnected ? html`<${SetupFold}><${ConnectSteps}/><//>` : html`<${ConnectSteps}/>`}
+    ${hosted && html`<p class="faint" style="font-size:12.5px;margin:0">Added new tools? Remove and re-add the connector in Claude to refresh them.</p>`}
     ${hosted && html`<details class="card"><summary class="muted" style="cursor:pointer;font-size:13.5px">More options</summary>
       <div class="stack" style="gap:12px;margin-top:12px">
         <div class="field"><label>Your link</label><div class="row"><div class="codebox" style="flex:1">${hide(url)}</div><button class="btn small ghost" onClick=${() => setShow(!show)}>${show ? 'Hide' : 'Show'}</button></div></div>

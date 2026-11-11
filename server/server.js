@@ -73,14 +73,15 @@ async function handleMcp(req, res, url) {
   const msg = await body(req);
   if (msg.__bad) return json(res, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
   const call = (name, args) => run(name, args, 'claude');
+  const website = `${process.env.PUBLIC_URL || `http://${req.headers.host}`}/#key=${API_KEY}`;
   const session = req.headers['mcp-session-id'] || crypto.randomUUID();
   const hdr = { 'mcp-session-id': session };
   if (Array.isArray(msg)) {
-    const out = msg.map(m => mcpHandle(m, call)).filter(Boolean);
+    const out = msg.map(m => mcpHandle(m, call, { website })).filter(Boolean);
     if (!out.length) { res.writeHead(202, CORS).end(); return; }
     return json(res, 200, out, hdr);
   }
-  const out = mcpHandle(msg, call);
+  const out = mcpHandle(msg, call, { website });
   if (!out) { res.writeHead(202, CORS).end(); return; }
   return json(res, 200, out, hdr);
 }

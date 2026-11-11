@@ -5,7 +5,7 @@ import { openSheet } from './store.js';
 export const GLOSSARY = {
   // ---- statuses & scoring ----
   status: { t: 'Buy, Hold, Sell', b: 'What this basket\'s rules say about a stock. They are your rules, not advice.', list: ['✓ Buy: passes the rules. Fine to buy or keep.', '= Hold: some warning signs. Keep it, but don\'t add more (at most 10% of the basket).', '✕ Sell: breaks a must-pass rule or has too many warnings. The app prepares a sell for you to confirm.'] },
-  warnings: { t: 'Warnings', b: 'Each rule shows green, amber or red. Amber adds 1 warning, red adds 2.', list: ['0–3 warnings: Buy', '4–8 warnings: Hold', 'More than 8: Sell', 'Each basket has its own rules: change them with ⚙ Edit rules on the basket page.'] },
+  warnings: { t: 'Warnings', b: 'Each rule shows green, amber or red. Amber adds 1 warning, red adds 2.', list: ['By default: 0–3 warnings is Buy, 4–8 is Hold, more than 8 is Sell. Pro can change these cutoffs (Rating cutoffs).', 'Each basket has its own rules: change them with ⚙ Edit rules on the basket page.'] },
   mustpass: { t: 'Must-pass rule ★', b: 'The 5 most important safety rules. A single red on any of them means Sell, however good the rest looks.', list: ['Daily trading', 'Owner shares pledged', 'Debt vs equity', 'Interest cover', 'Loss-making years'] },
   // ---- the 13 rules ----
   adtv: { t: 'Daily trading', b: 'The average value of shares bought and sold each day. Low trading means it can be hard to sell without moving the price.', ex: '₹10 crore a day or more is comfortable. Under ₹2 crore is risky.' },

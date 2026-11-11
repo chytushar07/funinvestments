@@ -213,6 +213,7 @@ test('parity: every MCP tool gives the same result as the website door', () => {
     c('get_basket_status', { basket_id: b.id });
     c('set_rule', { basket_id: b.id, rule_id: 'de', green: 0.45, red: 0.95 });
     c('toggle_rule', { basket_id: b.id, rule_id: 'peg', enabled: false });
+    c('set_rating_cutoffs', { basket_id: b.id, buy_below: 3, sell_above: 7 });
     c('get_rules', { basket_id: b.id });
     c('apply_default_rules', { basket_id: b.id });
     c('reset_rules', { basket_id: b.id });
@@ -537,4 +538,31 @@ test('rebalance never sells a stock the person kept anyway after a rules Sell', 
   const r = ok(dispatch(st, 'rebalance_plan', { basket_id: b.id }, 'you'));
   assert.ok(!r.trades.some(t => t.symbol === 'PRECWIRE'));
   assert.ok(!r.rows.some(x => x.symbol === 'PRECWIRE'));
+});
+
+test('rating cutoffs: Pro edits Buy/Hold/Sell by warnings for defaults, a basket or all; Free and bad values refused', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'Six', symbols: SIX }, 'you')).basket;
+  assert.equal(dispatch(st, 'set_rating_cutoffs', { scope: 'defaults', buy_below: 3, sell_above: 6 }, 'claude').error.code, 'pro_feature');
+  assert.equal(dispatch(st, 'set_rating_cutoffs', { scope: 'defaults', buy_below: 3, sell_above: 6 }, 'you').error.code, 'pro_feature');
+  st.plan = 'pro';
+  assert.equal(dispatch(st, 'set_rating_cutoffs', { scope: 'defaults', buy_below: 7, sell_above: 5 }, 'claude').error.code, 'bad_cutoffs');
+  // Default: Navin Fluorine (3 warnings) is Buy. With "Buy below 3" it becomes Hold in the default ratings only.
+  const nf = () => ok(dispatch(st, 'get_universe', { q: 'Navin' }, 'you')).stocks[0].status;
+  assert.equal(nf(), 'pass');
+  const r = ok(dispatch(st, 'set_rating_cutoffs', { scope: 'defaults', buy_below: 3, sell_above: 6 }, 'claude'));
+  assert.match(r.cutoffs.meaning, /fewer than 3/);
+  assert.equal(nf(), 'watch');
+  assert.equal(ok(dispatch(st, 'get_rules', { scope: 'defaults' }, 'claude')).cutoffs.buy_below, 3);
+  assert.equal(ok(dispatch(st, 'get_rules', { basket_id: b.id }, 'claude')).cutoffs.buy_below, 4, 'basket keeps its own');
+  ok(dispatch(st, 'set_rating_cutoffs', { scope: 'all', buy_below: 2, sell_above: 6 }, 'claude'));
+  assert.equal(st.baskets[0].rules.cutoffs.buyBelow, 2);
+  // A second basket makes "which rules?" ambiguous without scope or basket_id
+  ok(dispatch(st, 'create_basket', { name: 'Two', symbols: SIX }, 'you'));
+  assert.equal(dispatch(st, 'set_rating_cutoffs', { buy_below: 4 }, 'claude').error.code, 'which_rules');
+  assert.equal(dispatch(st, 'set_rule', { rule_id: 'de', green: 0.4 }, 'claude').error.code, 'which_rules');
+  assert.equal(dispatch(st, 'get_basket_status', { basket_id: 'nope' }, 'claude').error.code, 'not_found');
+  assert.equal(dispatch(st, 'add_stock', { symbol: 'NTPC' }, 'claude').error.code, 'which_basket');
+  ok(dispatch(st, 'reset_rules', { scope: 'all' }, 'claude'));
+  assert.equal(nf(), 'pass');
 });

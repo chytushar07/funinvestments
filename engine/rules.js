@@ -27,8 +27,13 @@ export const EVENT_RULES = [
 
 export const STATUS_LIMITS = { acMin: 20, watchFrom: 4, removeAbove: 8, passBufferTo: 4, minHistory: 3, missingWatch: 3 };
 
+// Rating cutoffs: Buy with fewer than buyBelow warnings, Sell with more than sellAbove, Hold in between.
+export const DEFAULT_CUTOFFS = { buyBelow: STATUS_LIMITS.watchFrom, sellAbove: STATUS_LIMITS.removeAbove };
+export const cutoffsOf = ruleSet => ({ ...DEFAULT_CUTOFFS, ...(ruleSet?.cutoffs || {}) });
+
 export function defaultRuleSet() {
   return {
+    cutoffs: { ...DEFAULT_CUTOFFS },
     metrics: DEFAULT_RULES.map(r => ({ ...r, enabled: true, source: 'default' })),
     events: EVENT_RULES.map(r => ({ ...r, enabled: false, source: 'default' })),
   };
@@ -71,6 +76,7 @@ export function scoreStock(stock, ruleSet, opts = {}) {
     if (e.critical) res.criticalReds.push(e.id); else { res.points += 2; res.reds.push(e.id); }
   }
   const L = STATUS_LIMITS;
+  const C = cutoffsOf(ruleSet);
   const theme = opts.theme || null;
   const minTheme = opts.minTheme ?? L.acMin;
   const share = theme ? stock.themes?.[theme] : undefined;
@@ -80,16 +86,16 @@ export function scoreStock(stock, ruleSet, opts = {}) {
     res.status = 'remove'; res.reasons.push(`Only ${share}% of its business is in this theme (needs ${minTheme}%)`); res.lowTheme = true;
   } else if (res.criticalReds.length) {
     res.status = 'remove'; res.reasons.push(`Fails a must-pass rule: ${res.criticalReds.map(labelOf).join(', ')}`);
-  } else if (res.points > L.removeAbove) {
-    res.status = 'remove'; res.reasons.push(`${res.points} warnings (more than ${L.removeAbove})`);
+  } else if (res.points > C.sellAbove) {
+    res.status = 'remove'; res.reasons.push(`${res.points} warnings (more than ${C.sellAbove})`);
   } else {
     const watchWhy = [];
-    if (res.points >= L.watchFrom) watchWhy.push(`${res.points} warnings`);
+    if (res.points >= C.buyBelow) watchWhy.push(`${res.points} warnings`);
     if ((stock.historyYears ?? 10) < L.minHistory) watchWhy.push('Less than 3 years of price history');
     if (missingCount >= L.missingWatch) watchWhy.push(`${missingCount} numbers missing`);
     if (watchWhy.length) {
-      const onlyPoints = watchWhy.length === 1 && res.points === L.passBufferTo;
-      if (opts.prevStatus === 'pass' && onlyPoints) { res.status = 'pass'; res.reasons.push('Stays Buy until 5 warnings (avoids flip-flopping)'); res.buffered = true; }
+      const onlyPoints = watchWhy.length === 1 && res.points === C.buyBelow;
+      if (opts.prevStatus === 'pass' && onlyPoints) { res.status = 'pass'; res.reasons.push(`Stays Buy until ${C.buyBelow + 1} warnings (avoids flip-flopping)`); res.buffered = true; }
       else { res.status = 'watch'; res.reasons.push(...watchWhy); }
     } else {
       res.status = 'pass'; res.reasons.push(res.points ? `${res.points} warning${res.points > 1 ? 's' : ''}` : 'No warnings');
