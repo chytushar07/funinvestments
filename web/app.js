@@ -45,8 +45,38 @@ const refreshNow = async () => { if (await refresh()) toast('Up to date'); };
 const resetDemo = () => confirmDialog({ title: 'Start the demo over?', body: 'This erases every basket, order, alert, news flag and the activity log, and puts back ₹1,00,000 of practice money. It can\'t be undone.', confirm: 'Reset demo', danger: true,
   onConfirm: async () => { const r = await act('reset', {}, { ok: 'Demo reset · fresh start' }); if (r?.ok) go('home'); } });
 
+// Notification panel behind the bell: newest alerts, delete one, or clear all. Opening it marks them read.
+function NotifPanel({ onClose }) {
+  const S = store.S;
+  const list = S.alerts || [];
+  const bname = id => S.baskets.find(b => b.id === id)?.name;
+  useEffect(() => {
+    const t = setTimeout(() => { if (store.S.unread) act('mark_alerts_read', {}); }, 1200);
+    return () => clearTimeout(t);
+  }, []);
+  const ic = a => (a.critical ? ['crit', '✕'] : ['news', 'flag_confirmed', 'flag_cleared', 'filing'].includes(a.type) ? ['news', '⚑'] : a.type === 'refill' ? ['refill', '↻'] : a.type === 'drift' ? ['', '⇄'] : ['', '•']);
+  const clearAll = () => { onClose(); confirmDialog({ title: 'Clear all notifications?', body: 'This removes every notification. Orders and baskets are not affected.', confirm: 'Clear all', danger: true, onConfirm: () => act('clear_alerts', {}, { ok: 'Notifications cleared' }) }); };
+  return html`<div class="notif-pop" role="dialog" aria-label="Notifications">
+    <div class="notif-head"><b>Notifications</b>${list.length > 0 && html`<button class="linkbtn danger" onClick=${clearAll}>Clear all</button>`}</div>
+    ${list.length ? html`<div class="notif-list">${list.slice(0, 30).map(a => { const [c, sym] = ic(a); return html`<div key=${a.id} class="notif-item ${a.read ? '' : 'unread'}">
+        <span class="ic ${c}" aria-hidden="true">${sym}</span>
+        <span class="grow"><span class="t">${a.text}</span><span class="s">${short(a.date)}${bname(a.basketId) ? ' · ' + bname(a.basketId) : ''}</span></span>
+        <button class="iconlink" aria-label="Delete notification" title="Delete" onClick=${e => { e.stopPropagation(); act('dismiss_alert', { alert_id: a.id }); }}>${I.x}</button></div>`; })}</div>`
+    : html`<div class="notif-empty muted">No notifications</div>`}
+    ${list.length > 0 && html`<button class="notif-foot linkbtn" onClick=${() => { onClose(); go('alerts'); }}>See all alerts</button>`}
+  </div>`;
+}
+
 function TopBar() {
   const S = store.S;
+  const [bell, setBell] = useState(false);
+  useEffect(() => {
+    if (!bell) return;
+    const off = e => { if (!e.target.closest?.('.notifmenu')) setBell(false); };
+    const key = e => { if (e.key === 'Escape') setBell(false); };
+    document.addEventListener('click', off); document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('click', off); document.removeEventListener('keydown', key); };
+  }, [bell]);
   const [menu, setMenu] = useState(false);
   const [busy, setBusy] = useState(null);
   useEffect(() => {
@@ -66,6 +96,9 @@ function TopBar() {
         <span class="clock-k">Demo date</span><span class="num">${short(S.clock)}</span></button>
       <button class="clock-step ${busy === 'advance_day' ? 'busy' : ''}" disabled=${!!busy} title="Jump 1 day: the daily rule checks run" aria-label="Jump 1 day" onClick=${() => jump('advance_day')}>+1<span class="u-s">d</span><span class="u-l"> day</span></button>
       <button class="clock-step ${busy === 'advance_quarter' ? 'busy' : ''}" disabled=${!!busy} title="Jump 1 quarter: new quarterly results arrive" aria-label="Jump 1 quarter" onClick=${() => jump('advance_quarter')}>+1<span class="u-s">q</span><span class="u-l"> quarter</span></button></div>
+    <div class="topmenu notifmenu">
+      <button class="iconbtn" aria-haspopup="dialog" aria-expanded=${bell} aria-label=${S.unread ? `Notifications, ${S.unread} unread` : 'Notifications'} onClick=${() => setBell(!bell)}>${I.bell}${S.unread ? html`<span class="dot-badge">${S.unread}</span>` : null}</button>
+      ${bell && html`<${NotifPanel} onClose=${() => setBell(false)}/>`}</div>
     <div class="topmenu">
       <button class="iconbtn" aria-haspopup="menu" aria-expanded=${menu} aria-label="Settings, refresh, reset" onClick=${() => setMenu(!menu)}>${I.user}</button>
       ${menu && html`<div class="topmenu-pop" role="menu">
