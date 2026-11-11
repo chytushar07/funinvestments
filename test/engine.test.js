@@ -127,7 +127,8 @@ test('CRUD: baskets', () => {
   invest(st, b.id);
   const cashBefore = st.cash;
   assert.equal(dispatch(st, 'delete_basket', { basket_id: b.id }, 'claude').error.code, 'person_only');
-  const del = ok(dispatch(st, 'delete_basket', { basket_id: b.id }, 'you'));
+  assert.equal(dispatch(st, 'delete_basket', { basket_id: b.id }, 'you').error.code, 'has_holdings', 'never deletes shares silently');
+  const del = ok(dispatch(st, 'delete_basket', { basket_id: b.id, sell_all: true }, 'you'));
   assert.ok(del.returnedCash > 40000);
   assert.ok(Math.abs(st.cash - (cashBefore + del.returnedCash)) < 1);
   assert.equal(st.baskets.length, 1);
@@ -251,7 +252,7 @@ test('exit basket: sells everything, cancels pending orders, returns cash, keeps
   const pendingBuy = ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', symbol: 'SRF', qty: 1 }, 'you')).orders[0];
   const ex = ok(dispatch(st, 'exit_basket', { basket_id: b.id }, 'claude'));
   assert.equal(st.orders.find(o => o.id === pendingBuy.id).status, 'cancelled');
-  assert.equal(ex.orders.length, 6);
+  assert.equal(ex.orders.length, Object.values(st.baskets[0].holdings).filter(h => h.qty > 0).length, 'one sell per holding');
   assert.equal(dispatch(st, 'confirm_order', { order_ids: ex.orders.map(o => o.id) }, 'claude').error.code, 'person_only');
   const r = ok(dispatch(st, 'confirm_order', { order_ids: ex.orders.map(o => o.id) }, 'you'));
   assert.equal(r.exits.length, 1);
@@ -263,7 +264,7 @@ test('exit basket: sells everything, cancels pending orders, returns cash, keeps
 
 test('activity: every Claude call is logged in plain words; to-do shows what the user must do', () => {
   const st = createState();
-  const b = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'RELIANCE'] }, 'claude')).basket;
+  const b = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'PREMIERENE'] }, 'claude')).basket;
   ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 50000 }, 'claude'));
   dispatch(st, 'delete_basket', { basket_id: b.id }, 'claude');
   dispatch(st, 'get_basket_status', {}, 'you'); // the website's own reads are not Claude activity
@@ -293,7 +294,7 @@ test('Claude connection status: only Claude calls connect; every call stamps whe
   const st = createState();
   let s = ok(dispatch(st, 'get_state', {}, 'you'));
   assert.equal(s.claudeConnected, false); assert.equal(s.lastClaudeCall, null);
-  ok(dispatch(st, 'create_basket', { name: 'Mine', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'RELIANCE'] }, 'you'));
+  ok(dispatch(st, 'create_basket', { name: 'Mine', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'PREMIERENE'] }, 'you'));
   assert.equal(ok(dispatch(st, 'get_state', {}, 'you')).claudeConnected, false, 'the website\'s own actions never count');
   ok(dispatch(st, 'get_activity', {}, 'claude'));
   s = ok(dispatch(st, 'get_state', {}, 'you'));
@@ -308,7 +309,7 @@ test('Claude connection status: only Claude calls connect; every call stamps whe
 
 test('activity: the user\'s own actions are logged as "you", look-ups never crowd out actions, settled drafts stop asking', () => {
   const st = createState();
-  const b = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'RELIANCE'] }, 'you')).basket;
+  const b = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'PREMIERENE'] }, 'you')).basket;
   const drafted = ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 50000 }, 'claude')).orders;
   let S = ok(dispatch(st, 'get_state', {}, 'you'));
   assert.equal(S.activity[0].actor, 'claude'); assert.equal(S.activity[0].pending, true, 'Claude\'s draft still waits for the user');
@@ -428,7 +429,7 @@ test('plan switch: Free caps a Pro basket without breaking it, turns off every-c
 
 test('invest: whole-share rounding never drafts more than the amount, and confirm never half-fills', () => {
   const st = createState();
-  const b = ok(dispatch(st, 'create_basket', { name: 'All in', symbols: AC.slice(0, 6) }, 'you')).basket;
+  const b = ok(dispatch(st, 'create_basket', { name: 'All in', symbols: AC }, 'you')).basket;
   const d = ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 100000 }, 'you'));
   const total = d.orders.reduce((t, o) => t + o.estValue * 1.001, 0);
   assert.ok(total <= 100000 + 0.01, `drafted ${total}`);
@@ -443,7 +444,7 @@ test('invest: whole-share rounding never drafts more than the amount, and confir
 
 test('delete basket removes its orders, alerts and journal; remove_stock reports an automatic replacement', () => {
   const st = createState();
-  const b = ok(dispatch(st, 'create_basket', { name: 'Gone', symbols: AC.slice(0, 6) }, 'you')).basket;
+  const b = ok(dispatch(st, 'create_basket', { name: 'Gone', symbols: AC }, 'you')).basket;
   ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 20000 }, 'you'));
   ok(dispatch(st, 'delete_basket', { basket_id: b.id }, 'you'));
   assert.equal(st.orders.filter(o => o.basketId === b.id).length, 0);
@@ -453,4 +454,87 @@ test('delete basket removes its orders, alerts and journal; remove_stock reports
   assert.ok(r.basket.count >= 6, 'uninvested basket refilled at once');
   assert.equal(r.refilled.length, r.basket.count - (b2.count - 1));
   assert.ok(r.refilled.length >= 1);
+});
+
+// ---- Money bugs from the owner's phone recording ----
+const SIX = ['SRF', 'HAVELLS', 'KIRLPNU', 'NAVINFLUOR', 'BLUESTARCO', 'PRECWIRE'];
+test('invest sizing: whole shares sized to each part, a too-dear stock is reported not dropped silently, totals agree', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'Six', symbols: SIX }, 'you')).basket;
+  assert.equal(b.count, 6);
+  const d = ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 50000 }, 'you'));
+  // Navin Fluorine is ₹9,115 a share, more than its ₹8,333 part: listed with the reason
+  assert.ok(d.skipped.some(x => x.symbol === 'NAVINFLUOR' && /One share costs/.test(x.why)), JSON.stringify(d.skipped));
+  assert.equal(d.orders.length + d.skipped.length, 6, 'every stock is either bought or explained');
+  const sum = d.orders.reduce((t, o) => t + o.estValue, 0);
+  assert.ok(Math.abs(sum - d.total) < 1, 'total shown = sum of orders');
+  assert.ok(d.total > 45000 && d.total <= 50000, `invests close to the amount: ${d.total}`);
+  for (const o of d.orders) assert.ok(o.estValue <= 50000 / 5 + 1, `${o.symbol} sized to its part`);
+  // Below the minimum: investing is refused with the reason
+  const st2 = createState();
+  const s2 = ok(dispatch(st2, 'create_basket', { name: 'Three', symbols: SIX.slice(0, 3) }, 'you')).basket;
+  assert.equal(dispatch(st2, 'create_order', { basket_id: s2.id, side: 'buy', amount: 50000 }, 'you').error.code, 'below_min');
+});
+
+test('rebalance: nothing to do right after investing; real drift drafts buys and sells that move toward target', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'Six', symbols: SIX }, 'you')).basket;
+  invest(st, b.id, 50000);
+  let v = ok(dispatch(st, 'get_basket_status', { basket_id: b.id }, 'you')).basket;
+  assert.equal(v.needsRebalance, false, `fresh basket is on target (drift ${v.drift})`);
+  assert.equal(ok(dispatch(st, 'rebalance_plan', { basket_id: b.id, draft: true }, 'you')).orders.length, 0);
+  // One stock doubles: now it is far over target
+  st.prices.SRF *= 2.2;
+  v = ok(dispatch(st, 'get_basket_status', { basket_id: b.id }, 'you')).basket;
+  assert.equal(v.needsRebalance, true);
+  const r = ok(dispatch(st, 'rebalance_plan', { basket_id: b.id, draft: true }, 'you'));
+  assert.ok(r.orders.some(o => o.symbol === 'SRF' && o.side === 'sell'));
+  ok(dispatch(st, 'confirm_order', { order_ids: r.orders.map(o => o.id) }, 'you'));
+  const after = ok(dispatch(st, 'rebalance_plan', { basket_id: b.id }, 'you'));
+  assert.ok(after.max < r.max, `closer to target: ${r.max} → ${after.max}`);
+});
+
+test('exit P/L compares like with like: basket cash from earlier sells counts as money back', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'Six', symbols: SIX }, 'you')).basket;
+  invest(st, b.id, 50000);
+  const sym = Object.keys(st.baskets[0].holdings)[0];
+  const s1 = ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'sell', symbol: sym, qty: 1 }, 'you'));
+  ok(dispatch(st, 'confirm_order', { order_ids: s1.orders.map(o => o.id) }, 'you'));
+  assert.ok(st.baskets[0].cash > 0);
+  const ex = ok(dispatch(st, 'exit_basket', { basket_id: b.id }, 'you'));
+  assert.ok(Math.abs(ex.estimatedProceeds - ex.costBasis) < ex.costBasis * 0.01, `same day: ~no profit or loss (${ex.estimatedProceeds} vs ${ex.costBasis})`);
+  const r = ok(dispatch(st, 'confirm_order', { order_ids: ex.orders.map(o => o.id) }, 'you'));
+  assert.ok(Math.abs(r.exits[0].profit) < ex.costBasis * 0.01);
+  assert.ok(Math.abs(st.cash - 100000) < 500);
+});
+
+test('delete with holdings needs an explicit sell-all; preview shows money back; old duplicate names are numbered', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'Six', symbols: SIX }, 'you')).basket;
+  invest(st, b.id, 50000);
+  const pv = ok(dispatch(st, 'delete_preview', { basket_id: b.id }, 'you'));
+  assert.equal(pv.holds, true); assert.ok(pv.moneyBack > 45000);
+  assert.equal(dispatch(st, 'delete_basket', { basket_id: b.id }, 'you').error.code, 'has_holdings');
+  assert.equal(st.baskets.length, 1);
+  const d = ok(dispatch(st, 'delete_basket', { basket_id: b.id, sell_all: true }, 'you'));
+  assert.ok(Math.abs(d.returnedCash - pv.moneyBack) < 50);
+  assert.ok(Math.abs(st.cash - 100000) < 500);
+  const old = createState(); delete old.namesUnique;
+  old.baskets = [{ name: 'My basket' }, { name: 'My basket' }, { name: 'My basket' }].map((x, i) => ({ ...x, id: 'b' + i, kind: 'tracking', symbols: [], holdings: {}, cash: 0, limits: { minStocks: 6, maxStocks: 12 }, rules: old.rules, statusPrev: {}, strikes: {}, removedAt: {} }));
+  ok(dispatch(old, 'get_state', {}, 'you'));
+  assert.deepEqual(old.baskets.map(x => x.name), ['My basket', 'My basket 2', 'My basket 3']);
+});
+
+test('rebalance never sells a stock the person kept anyway after a rules Sell', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'Six', symbols: SIX }, 'you')).basket;
+  invest(st, b.id, 50000);
+  ok(dispatch(st, 'advance_quarter', {}, 'you')); // Precision Wires results: debt 2.1× → Sell, sell drafted
+  const sell = st.orders.find(o => o.symbol === 'PRECWIRE' && o.status === 'pending');
+  assert.ok(sell, 'rules drafted a sell');
+  ok(dispatch(st, 'cancel_order', { order_id: sell.id, reason: 'Keep' }, 'you'));
+  const r = ok(dispatch(st, 'rebalance_plan', { basket_id: b.id }, 'you'));
+  assert.ok(!r.trades.some(t => t.symbol === 'PRECWIRE'));
+  assert.ok(!r.rows.some(x => x.symbol === 'PRECWIRE'));
 });

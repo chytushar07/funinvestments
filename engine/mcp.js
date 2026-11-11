@@ -40,6 +40,6 @@ export function sameKey(a, b) {
   return d === 0;
 }
 
-export const READ_OPS = new Set(['get_activity', 'get_state', 'get_stock', 'get_basket_status', 'get_universe', 'get_alerts', 'get_refill_plan', 'get_rule_scorecard', 'get_orders', 'get_rules', 'what_if']);
+export const READ_OPS = new Set(['get_activity', 'get_state', 'get_stock', 'get_basket_status', 'get_universe', 'get_alerts', 'get_refill_plan', 'get_rule_scorecard', 'get_orders', 'get_rules', 'what_if', 'delete_preview']);
 
 export const wrapIndex = body => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}[hidden]{display:none!important}</style>${body}</html>`;

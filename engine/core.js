@@ -148,6 +148,24 @@ function stageWeights(st, weights) {
   return out;
 }
 
+// Why a stock can't be added to a basket right now (same checks as add_stock), for the Add buttons.
+function addBlocks(st, b) {
+  const out = {};
+  const max = Math.min(b.limits.maxStocks, plan(st).maxStocks);
+  const full = b.symbols.length >= max;
+  for (const u of Object.values(st.universe)) {
+    if (b.symbols.includes(u.symbol)) continue;
+    if (full) { out[u.symbol] = `Basket is full (${max} max${isPro(st) ? '' : ' on Free'})`; continue; }
+    const s = scoreIn(st, b, u.symbol);
+    if (s.status === 'remove') { out[u.symbol] = `Rated Sell here: ${s.reasons[0]}`; continue; }
+    if (b.symbols.length + 1 >= b.limits.minStocks) {
+      const sw = stageWeights(st, targetWeights(st, b, [...b.symbols, u.symbol]).weights);
+      if ((sw[u.stage] || 0) > b.limits.maxStageWeight + 0.01) out[u.symbol] = `Over the ${b.limits.maxStageWeight}% ${STAGE_LABEL[u.stage] || u.stage} limit`;
+    }
+  }
+  return out;
+}
+
 export function refillPlan(st, basket) {
   const L = basket.limits;
   const need = L.minStocks - basket.symbols.length;
@@ -276,9 +294,9 @@ export function checkBasket(st, b, kind) {
     } else addAlert(st, { basketId: b.id, symbol: sym, type: 'status', text: `${name} ${STATUS_LABEL[prev] || '—'} → ${STATUS_LABEL[s.status]}`, why });
   }
   if (b.kind === 'model' && invested(b)) {
-    const d = drift(st, b);
+    const d = rebalanceTrades(st, b);
     const busy = st.orders.some(o => o.basketId === b.id && o.status === 'pending');
-    if (!busy && d.max > b.limits.driftTrigger && (!b.lastDrift || daysBetween(b.lastDrift, st.clock) >= 28)) {
+    if (!busy && d.needed && (!b.lastDrift || daysBetween(b.lastDrift, st.clock) >= 28)) {
       b.lastDrift = st.clock;
       addAlert(st, { basketId: b.id, type: 'drift', text: `${b.name} is ${d.max.toFixed(1)} points off its target mix · rebalance`, why: d.rows.filter(r => Math.abs(r.diff) > 1).map(r => `${r.name}: ${r.actual}% of the basket (target ${r.target}%)`), action: { kind: 'rebalance', basketId: b.id } });
     }
@@ -295,15 +313,66 @@ function removeFromBasket(st, b, sym, why, source) {
   logDecision(st, { basketId: b.id, symbol: sym, action: 'removed', trigger: why, source });
 }
 
+// Whole-share sizing. Splits `amount` across the basket's target weights; a stock whose single share
+// costs more than its part is left out (with the reason) and its part goes to the others.
+const buyPx = px => px * (1 + SLIPPAGE);
+export function sizePlan(st, b, amount, symbols = b.symbols) {
+  const all = targetWeights(st, b, symbols);
+  const skipped = [];
+  for (const sym of symbols) if (all.statuses[sym] === 'remove') skipped.push({ symbol: sym, name: st.universe[sym]?.name || sym, why: 'Rated Sell by this basket\'s rules, so it isn\'t bought' });
+  let set = symbols.filter(x => all.statuses[x] !== 'remove');
+  for (let guard = 0; guard < 20 && set.length; guard++) {
+    const tw = targetWeights(st, b, set);
+    const tooDear = set.filter(x => tw.weights[x] > 0 && buyPx(st.prices[x]) > (amount * tw.weights[x]) / 100);
+    if (!tooDear.length) {
+      const rows = set.map(x => { const part = (amount * (tw.weights[x] || 0)) / 100; const qty = Math.floor(part / buyPx(st.prices[x])); return { symbol: x, name: st.universe[x]?.name || x, weight: tw.weights[x] || 0, part: r2(part), qty, est: r2(qty * st.prices[x]) }; }).filter(r => r.qty >= 1);
+      return { rows, skipped, weights: tw.weights, total: r2(rows.reduce((t, r) => t + r.est, 0)) };
+    }
+    // Leave out the most expensive one first, then size again (its part goes to the rest).
+    const worst = tooDear.sort((x, y) => st.prices[y] - st.prices[x])[0];
+    skipped.push({ symbol: worst, name: st.universe[worst]?.name || worst, why: `One share costs ${fmtINR(st.prices[worst])}, more than its ${fmtINR((amount * tw.weights[worst]) / 100)} share of the amount` });
+    set = set.filter(x => x !== worst);
+  }
+  return { rows: [], skipped, weights: {}, total: 0 };
+}
+
+// How far the basket is from its target mix. Targets only count stocks the basket can really hold:
+// a stock that is not held and whose one share is more than its part is left out (its part goes to the rest).
 export function drift(st, b) {
-  const value = basketValue(st, b) || 1;
-  const tw = targetWeights(st, b);
-  const rows = b.symbols.map(s => {
+  // A held stock the rules rate Sell is the rules' business (a sell order, or "keep anyway"), not rebalancing's:
+  // it is left out of the mix and of the value the targets are shared from.
+  const sellHeld = b.symbols.filter(s => (b.holdings[s]?.qty || 0) > 0 && scoreIn(st, b, s, b.statusPrev[s])?.status === 'remove');
+  const value = (basketValue(st, b) - sellHeld.reduce((t, s) => t + b.holdings[s].qty * (st.prices[s] ?? 0), 0)) || 1;
+  const held = b.symbols.filter(s => (b.holdings[s]?.qty || 0) > 0);
+  let set = b.symbols.filter(s => !sellHeld.includes(s));
+  let tw = targetWeights(st, b, set);
+  for (let i = 0; i < 20; i++) {
+    const out = set.filter(s => !held.includes(s) && tw.weights[s] > 0 && st.prices[s] > (value * tw.weights[s]) / 100);
+    if (!out.length) break;
+    set = set.filter(s => !out.includes(s)); tw = targetWeights(st, b, set);
+  }
+  const rows = b.symbols.filter(s => !sellHeld.includes(s)).map(s => {
     const actual = r2(((b.holdings[s]?.qty || 0) * st.prices[s] / value) * 100);
-    const target = tw.weights[s] || 0;
-    return { symbol: s, name: st.universe[s]?.name, actual, target, diff: r2(actual - target) };
+    const target = set.includes(s) ? tw.weights[s] || 0 : 0;
+    return { symbol: s, name: st.universe[s]?.name, actual, target, diff: r2(actual - target), price: st.prices[s], held: b.holdings[s]?.qty || 0 };
   });
-  return { rows, max: rows.reduce((m, r) => Math.max(m, Math.abs(r.diff)), 0), cashTarget: tw.cash };
+  return { rows, max: rows.reduce((m, r) => Math.max(m, Math.abs(r.diff)), 0), cashTarget: tw.cash, value };
+}
+// The trades that bring a basket back to its targets, in whole shares. A row moves only when
+// a whole number of shares really gets it closer (no 1-share churn from rounding).
+export function rebalanceTrades(st, b) {
+  const d = drift(st, b);
+  const trades = [];
+  for (const r of d.rows) {
+    if (!r.price) continue;
+    const want = Math.round((d.value * r.target) / 100 / r.price);
+    const delta = want - r.held;
+    if (!delta) continue;
+    const after = Math.abs(((want * r.price) / d.value) * 100 - r.target);
+    if (Math.abs(r.diff) - after < 1) continue; // under 1 point better: not worth a trade
+    trades.push({ symbol: r.symbol, name: r.name, side: delta > 0 ? 'buy' : 'sell', qty: Math.abs(delta), target: r.target, actual: r.actual, est: r2(Math.abs(delta) * r.price) });
+  }
+  return { ...d, trades, needed: d.max > b.limits.driftTrigger && trades.length > 0 };
 }
 
 function ruleLines(st, b, sym) {
@@ -390,7 +459,7 @@ export function basketView(st, b) {
   const niftyRet = b.niftyAtInvest ? r2(((st.nifty - b.niftyAtInvest) / b.niftyAtInvest) * 100) : 0;
   const isInv = invested(b);
   return {
-    id: b.id, name: b.name, description: b.description || '', kind: b.kind, theme: b.theme, themeLabel: b.theme ? THEME_LABEL[b.theme] : null,
+    id: b.id, name: b.name, description: b.description || '', kind: b.kind, theme: b.theme, themeLabel: b.theme ? THEME_LABEL[b.theme] : b.themeName || null,
     source: b.source, editedBy: b.editedBy || null, createdAt: b.createdAt, updatedAt: b.updatedAt || b.createdAt,
     value: r2(value), cash: r2(b.cash), invested: r2(inv), realized: r2(b.realized || 0), isInvested: isInv, pnl, returnPct: ret, niftyPct: niftyRet, vsNifty: r2(ret - niftyRet),
     count: b.symbols.length, limits: { ...b.limits, maxStocks: Math.min(b.limits.maxStocks, plan(st).maxStocks) }, rules: b.rules,
@@ -402,7 +471,9 @@ export function basketView(st, b) {
     refillShort: b.kind === 'model' && b.symbols.length < b.limits.minStocks ? refillPlan(st, b).short : 0,
     pendingOrders: st.orders.filter(o => o.basketId === b.id && o.status === 'pending').length,
     unread: st.alerts.filter(a => a.basketId === b.id && !a.read).length,
-    drift: isInv ? drift(st, b).max : 0,
+    ...(() => { if (!isInv || b.kind !== 'model') return { drift: 0, needsRebalance: false }; const rb = rebalanceTrades(st, b); return { drift: r2(rb.max), needsRebalance: rb.needed }; })(),
+    held: Object.values(b.holdings).filter(h => h.qty > 0).length,
+    addBlock: b.kind === 'model' ? addBlocks(st, b) : {},
   };
 }
 
@@ -484,7 +555,8 @@ const OPS = {
     let input = (a.symbols || []).map(upper).filter(Boolean);
     if (kind === 'tracking' && a.holdings) input = a.holdings.map(h => upper(h.symbol));
     input = [...new Set(input)];
-    const theme = a.theme === undefined ? inferTheme(st, input.filter(s => st.universe[s])) : (THEMES.some(t => t.id === a.theme) ? a.theme : null);
+    const themeName = !THEMES.some(t => t.id === a.theme) && a.theme_name ? String(a.theme_name).trim().slice(0, 30) : '';
+    const theme = themeName ? null : a.theme === undefined ? inferTheme(st, input.filter(s => st.universe[s])) : (THEMES.some(t => t.id === a.theme) ? a.theme : null);
     const rules = cloneRules(st.rules);
     applyRuleOverrides(st, rules, a.rules, actor);
     const probe = newBasket(st, { name: 'probe', kind, theme, symbols: [], actor, rules, limits: a.min_theme != null ? { minTheme: Number(a.min_theme) } : null });
@@ -524,6 +596,7 @@ const OPS = {
       b.netInvested = r2(Object.values(b.holdings).reduce((t, h) => t + h.qty * h.avg, 0));
       b.niftyAtInvest = st.nifty;
     }
+    if (themeName) b.themeName = themeName;
     st.baskets.push(b);
     for (const s of final) logDecision(st, { basketId: b.id, symbol: s, action: 'added', trigger: `${STATUS_WORD[b.statusPrev[s]] || 'Rated'} at creation`, source: actor });
     st.onboarded = true;
@@ -541,7 +614,8 @@ const OPS = {
     if (a.name != null) b.name = uniqueName(st, cleanName(a.name, b.name), b.id);
     if (a.description != null) b.description = String(a.description).slice(0, 140);
     let rescore = false;
-    if (a.theme !== undefined) { const t = a.theme === null || a.theme === '' ? null : a.theme; if (t && !THEMES.some(x => x.id === t)) throw new ApiError('bad_theme', `Theme must be one of ${THEMES.map(x => x.id).join(', ')} or null`); b.theme = t; rescore = true; }
+    if (a.theme !== undefined) { const t = a.theme === null || a.theme === '' ? null : a.theme; if (t && !THEMES.some(x => x.id === t)) throw new ApiError('bad_theme', `Theme must be one of ${THEMES.map(x => x.id).join(', ')} or null`); b.theme = t; if (t) delete b.themeName; rescore = true; }
+    if (a.theme_name !== undefined) { const n = String(a.theme_name || '').trim().slice(0, 30); if (n) { b.themeName = n; if (b.theme) { b.theme = null; rescore = true; } } else delete b.themeName; }
     b.editedBy = actor; b.updatedAt = st.clock;
     if (rescore) checkBasket(st, b, 'rules');
     return { basket: basketView(st, b) };
@@ -558,6 +632,9 @@ const OPS = {
 
   delete_basket(st, a, actor) {
     const b = getBasket(st, a.basket_id);
+    const holds = b.kind === 'model' && invested(b);
+    if (holds && !a.sell_all) throw new ApiError('has_holdings', `${b.name} still holds shares. Sell everything and delete (pass sell_all: true), or keep it.`);
+    const cost = r2(b.netInvested || 0);
     let returned = b.cash;
     if (b.kind === 'model') {
       const prov = provider(st);
@@ -576,7 +653,16 @@ const OPS = {
     st.journal = st.journal.filter(j => j.basketId !== b.id);
     st.baskets = st.baskets.filter(x => x.id !== b.id);
     track(st, 'basket_deleted', { kind: b.kind });
-    return { deleted: b.id, name: b.name, returnedCash: b.kind === 'model' ? r2(returned) : 0, cash: st.cash };
+    return { deleted: b.id, name: b.name, returnedCash: b.kind === 'model' ? r2(returned) : 0, profit: holds ? r2(returned - cost) : 0, cash: st.cash };
+  },
+
+  // What deleting would do, so the person sees it in ₹ before choosing.
+  delete_preview(st, a) {
+    const b = getBasket(st, a.basket_id);
+    let back = b.cash;
+    for (const [sym, h] of Object.entries(b.holdings)) if (h.qty > 0 && b.kind === 'model') back += h.qty * (st.prices[sym] ?? h.avg) * (1 - SLIPPAGE);
+    const holds = b.kind === 'model' && invested(b);
+    return { name: b.name, holds, holdings: Object.values(b.holdings).filter(h => h.qty > 0).length, moneyBack: r2(back), cost: r2(b.netInvested || 0), profit: holds ? r2(back - (b.netInvested || 0)) : 0, pending: st.orders.filter(o => o.basketId === b.id && o.status === 'pending').length };
   },
 
   // Exit = sell everything in the basket. Drafts sells; a person confirms. Cash returns to practice cash.
@@ -607,7 +693,7 @@ const OPS = {
     if (b.kind === 'model' && s.status === 'remove') throw new ApiError('rule_block', `${u.name} is rated ✕ Sell here: ${s.reasons[0]}`);
     if (b.kind === 'model') {
       const sw = stageWeights(st, targetWeights(st, b, [...b.symbols, sym]).weights);
-      if ((sw[u.stage] || 0) > b.limits.maxStageWeight + 0.01 && b.symbols.length + 1 >= b.limits.minStocks) throw new ApiError('rule_block', `${STAGE_LABEL[u.stage]} would be ${sw[u.stage]}% (cap ${b.limits.maxStageWeight}%)`);
+      if ((sw[u.stage] || 0) > b.limits.maxStageWeight + 0.01 && b.symbols.length + 1 >= b.limits.minStocks) throw new ApiError('rule_block', `Over the ${b.limits.maxStageWeight}% ${STAGE_LABEL[u.stage]} limit (it would be ${Math.round(sw[u.stage])}%)`);
     }
     if (b.kind === 'tracking') b.holdings[sym] = b.holdings[sym] || { qty: 0, avg: st.prices[sym] };
     b.symbols.push(sym); b.statusPrev[sym] = s.status; b.editedBy = actor; b.updatedAt = st.clock;
@@ -790,17 +876,12 @@ const OPS = {
       const amount = Number(a.amount);
       if (!(amount > 0)) throw new ApiError('bad_amount', 'Enter an amount');
       if (amount > st.cash + b.cash) throw new ApiError('insufficient', `Paper cash is ${fmtINR(st.cash + b.cash)}`);
-      const tw = targetWeights(st, b);
-      let left = amount; // rounding to whole shares never spends more than the amount asked for
-      for (const [sym, w] of Object.entries(tw.weights)) {
-        let qty = Math.round((amount * w) / 100 / st.prices[sym]);
-        if (qty * st.prices[sym] * (1 + SLIPPAGE) > left) qty = Math.floor(left / (st.prices[sym] * (1 + SLIPPAGE)));
-        if (qty < 1) continue;
-        left -= qty * st.prices[sym] * (1 + SLIPPAGE);
-        out.push(makeOrder(st, { basketId: b.id, symbol: sym, side, qty, source: actor, tag: 'invest', group, reason: `Invest ${fmtINR(amount)} · ${w}% of basket` }));
-      }
-      if (!out.length) throw new ApiError('bad_amount', 'Amount too small for one share of each');
+      if (b.symbols.length < b.limits.minStocks) throw new ApiError('below_min', `${b.name} has ${b.symbols.length} stock${b.symbols.length === 1 ? '' : 's'}. Add ${b.limits.minStocks - b.symbols.length} more before investing (a basket needs at least ${b.limits.minStocks}).`);
+      const plan = sizePlan(st, b, amount);
+      for (const r of plan.rows) out.push(makeOrder(st, { basketId: b.id, symbol: r.symbol, side, qty: r.qty, source: actor, tag: 'invest', group, reason: `Invest ${fmtINR(amount)} · about ${fmtINR(r.part)} here` }));
+      if (!out.length) throw new ApiError('bad_amount', `${fmtINR(amount)} is too little for one share of these stocks`, { skipped: plan.skipped });
       track(st, 'invest_drafted', { amount, source: actor });
+      return { orders: out, skipped: plan.skipped, total: plan.total, leftover: r2(amount - plan.total), note: 'Pending. A person confirms them in the FunInvestments website (Orders).' };
     } else {
       const sym = upper(a.symbol);
       if (!st.universe[sym]) throw new ApiError('not_found', `Unknown symbol ${sym}`);
@@ -913,16 +994,11 @@ const OPS = {
 
   rebalance_plan(st, a, actor) {
     const b = getBasket(st, a.basket_id);
-    const d = drift(st, b);
+    if (b.kind === 'tracking') throw new ApiError('tracking_no_orders', 'Tracking baskets don\'t place orders.');
+    const d = rebalanceTrades(st, b);
     if (!a.draft) return d;
-    const value = basketValue(st, b);
-    const orders = [];
-    for (const r of d.rows) {
-      const delta = Math.floor((value * r.target) / 100 / st.prices[r.symbol]) - (b.holdings[r.symbol]?.qty || 0);
-      if (Math.abs(delta) < 1) continue;
-      orders.push(makeOrder(st, { basketId: b.id, symbol: r.symbol, side: delta > 0 ? 'buy' : 'sell', qty: Math.abs(delta), source: actor, tag: 'rebalance', reason: `Rebalance to ${r.target}% of basket` }));
-    }
-    return { ...d, orders };
+    const orders = d.trades.map(t => makeOrder(st, { basketId: b.id, symbol: t.symbol, side: t.side, qty: t.qty, source: actor, tag: 'rebalance', reason: `Rebalance to ${t.target}% of basket` }));
+    return { ...d, orders, note: orders.length ? undefined : 'Nothing to do: the basket is as close to its targets as whole shares allow.' };
   },
 
   // ---- News flags: create / update / withdraw ----
@@ -1161,7 +1237,20 @@ export const OP_NAMES = Object.keys(OPS);
 export const CLAUDE_PRO_RULES = new Set(['set_rule', 'toggle_rule', 'reset_rules', 'apply_default_rules', 'set_basket_rule']);
 export const PERSON_ONLY = new Set(['confirm_order', 'set_plan', 'delete_basket', 'delete_candidate', 'delete_journal', 'clear_alerts']);
 
+// Older saves could hold several baskets with the same name: number them once (My basket, My basket 2, …).
+function migrate(st) {
+  if (st.namesUnique) return;
+  const seen = new Set();
+  for (const b of st.baskets || []) {
+    let n = b.name, i = 2;
+    while (seen.has(n.toLowerCase())) n = `${b.name} ${i++}`;
+    b.name = n; seen.add(n.toLowerCase());
+  }
+  st.namesUnique = true;
+}
+
 export function dispatch(st, op, args = {}, actor = 'you') {
+  migrate(st);
   const fn = OPS[op];
   if (!fn) return { ok: false, error: { code: 'unknown_op', message: `Unknown operation ${op}` } };
   // Any call from Claude, even a refused one, proves the connector works: stamp when it was last seen.
