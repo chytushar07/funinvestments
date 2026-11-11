@@ -1,0 +1,16 @@
+{
+  "name": "funinvestments",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "FunInvestments by Tushar \u2014 rules-based guardian for your own stock baskets (prototype, paper trades only).",
+  "scripts": {
+    "start": "node server/server.js",
+    "mcp": "node server/mcp-stdio.js",
+    "test": "node --test test/*.test.js",
+    "build:artifact": "node server/build-artifact.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

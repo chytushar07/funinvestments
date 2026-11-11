@@ -1,0 +1,287 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createState, dispatch, refillPlan, execute, HISTORY } from '../engine/core.js';
+import { scoreStock, defaultRuleSet, band, DEFAULT_RULES } from '../engine/rules.js';
+import { backtest } from '../engine/scorecard.js';
+import { TOOLS, PARITY } from '../engine/tools.js';
+
+const ok = r => { assert.ok(r.ok, JSON.stringify(r.error)); return r.data; };
+const AC = ['SRF', 'NAVINFLUOR', 'FLUOROCHEM', 'HAVELLS', 'BLUESTARCO', 'KIRLPNU', 'PRECWIRE'];
+const invest = (st, id, amount = 50000) => ok(dispatch(st, 'confirm_order', { order_ids: ok(dispatch(st, 'create_order', { basket_id: id, side: 'buy', amount }, 'you')).orders.map(o => o.id) }, 'you'));
+
+test('rules: bands respect direction', () => {
+  const de = DEFAULT_RULES.find(r => r.id === 'de');
+  assert.equal(band(de, 0.5), 'green'); assert.equal(band(de, 0.8), 'amber'); assert.equal(band(de, 1.2), 'red');
+  const icr = DEFAULT_RULES.find(r => r.id === 'icr');
+  assert.equal(band(icr, 5), 'green'); assert.equal(band(icr, 3), 'amber'); assert.equal(band(icr, 2), 'red');
+  assert.equal(band(de, null), 'missing');
+});
+
+test('rules: critical red removes, points decide watch, buffer holds pass, theme share only inside a theme', () => {
+  const rs = defaultRuleSet();
+  const base = { themes: { ac: 50 }, historyYears: 10, metrics: { adtv: 50, pledge: 0, de: 0.2, icr: 20, loss: 0, vol: 20, beta: 1, dd: -20, cash: 1, roe: 20, margin: 1, pe: 1, peg: 1 } };
+  assert.equal(scoreStock(base, rs).status, 'pass');
+  assert.equal(scoreStock({ ...base, metrics: { ...base.metrics, de: 2 } }, rs).status, 'remove');
+  const four = { ...base, metrics: { ...base.metrics, vol: 60, roe: 5 } };
+  assert.equal(scoreStock(four, rs).status, 'watch');
+  assert.equal(scoreStock(four, rs, { prevStatus: 'pass' }).status, 'pass', 'buffer');
+  const low = { ...base, themes: { ac: 10 } };
+  assert.equal(scoreStock(low, rs).status, 'pass', 'no theme → no theme rule');
+  assert.equal(scoreStock(low, rs, { theme: 'ac', minTheme: 20 }).status, 'remove');
+  assert.equal(scoreStock({ ...base, historyYears: 1 }, rs).status, 'watch');
+});
+
+test('mock data: AC statuses match the research doc (with the AC theme rule)', () => {
+  const st = createState();
+  const s = sym => scoreStock(st.universe[sym], st.rules, { theme: 'ac', minTheme: 20 }).status;
+  for (const p of ['SRF', 'HAVELLS', 'KIRLPNU', 'BLUESTARCO', 'FLUOROCHEM', 'NAVINFLUOR']) assert.equal(s(p), 'pass', p);
+  for (const w of ['LGEINDIA', 'KRN', 'AVL', 'KSHINTL', 'SUBROS', 'VOLTAS', 'WHIRLPOOL']) assert.equal(s(w), 'watch', w);
+  for (const r of ['RAMRAT', 'HIRECT', 'EMIL', 'AMBER', 'JCHAC', 'PGEL', 'EPACK', 'ICEMAKE', 'HINDALCO', 'IFBIND']) assert.equal(s(r), 'remove', r);
+});
+
+test('backtest: default AC rules reproduce the doc yearly figures', () => {
+  const bt = backtest(defaultRuleSet(), HISTORY, {}, { theme: 'ac', minTheme: 20 });
+  const y = Object.fromEntries(bt.years.map(r => [r.year, r]));
+  assert.equal(y[2018].keptAvg, 26); assert.equal(y[2018].removedAvg, -29);
+  assert.equal(y[2020].removedAvg, 179); assert.equal(y[2022].removedRight, 0);
+  assert.equal(bt.summary.keptBeatYears, 7);
+  assert.equal(bt.summary.worstAvoided.symbol, 'FEDDERS');
+});
+
+test('universe: energy + profitable filter', () => {
+  const st = createState();
+  const u = ok(dispatch(st, 'get_universe', { sector: 'Energy', profitable_years: 3 }, 'claude'));
+  assert.ok(u.count > 10);
+  assert.ok(!u.stocks.some(s => s.symbol === 'INOXWIND'), 'Inox Wind had a loss 2 years ago');
+  assert.ok(u.stocks.some(s => s.symbol === 'SUZLON'), 'Suzlon profitable last 3 years');
+});
+
+test('per-basket rules: an energy basket with strict loss rule', () => {
+  const st = createState(); st.plan = 'pro';
+  const b = ok(dispatch(st, 'create_basket', { name: 'Profitable energy', symbols: ['NTPC', 'SUZLON', 'COALINDIA', 'PETRONET', 'GAIL', 'POWERGRID'], rules: { loss: { green: 0, red: 0 } } }, 'claude'));
+  assert.equal(b.basket.theme, 'energy');
+  assert.ok(b.skipped.some(s => s.symbol === 'SUZLON'));
+  assert.equal(b.basket.rules.metrics.find(r => r.id === 'loss').red, 0);
+  assert.equal(st.rules.metrics.find(r => r.id === 'loss').red, 1, 'default rules untouched');
+});
+
+test('execute: slippage and liquidity cap', () => {
+  const f = execute({ symbol: 'X', side: 'buy', qty: 10 }, { price: 100 }, 50);
+  assert.equal(f.price, 100.1); assert.equal(f.value, 1001);
+  assert.throws(() => execute({ symbol: 'X', side: 'buy', qty: 1e6 }, { price: 100 }, 1), /5%/);
+});
+
+test('demo: create → invest → news → sell → refill (stage cap + cool-down)', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'AC basket', symbols: AC }, 'claude'));
+  assert.equal(b.basket.count, 6);
+  assert.deepEqual(b.skipped.map(x => x.symbol), ['FLUOROCHEM']);
+  const id = b.basket.id;
+  const inv = ok(dispatch(st, 'create_order', { basket_id: id, side: 'buy', amount: 50000 }, 'claude'));
+  assert.equal(dispatch(st, 'confirm_order', { order_ids: inv.orders.map(o => o.id) }, 'claude').error.code, 'person_only');
+  ok(dispatch(st, 'confirm_order', { order_ids: inv.orders.map(o => o.id) }, 'you'));
+  const fl = ok(dispatch(st, 'add_news_flag', { symbol: 'PRECWIRE', metric: 'de', impact: 'worse' }, 'claude'));
+  assert.equal(fl.drafted_orders[0].tag, 'news_only');
+  ok(dispatch(st, 'confirm_order', { order_id: fl.drafted_orders[0].id }, 'you'));
+  const plan = ok(dispatch(st, 'get_refill_plan', { basket_id: id }, 'claude'));
+  assert.equal(plan.count, 5);
+  assert.ok(plan.skipped.some(s => s.symbol === 'PRECWIRE' && /cool-down/.test(s.why)));
+  assert.ok(plan.skipped.some(s => s.symbol === 'FLUOROCHEM' && /limit/.test(s.why)));
+  assert.equal(plan.pendingOrders.length, 1);
+});
+
+test('news flag is confirmed by the next filing; a wrong guess is cleared', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'AC', symbols: AC }, 'you')).basket;
+  invest(st, b.id);
+  ok(dispatch(st, 'add_news_flag', { symbol: 'PRECWIRE', metric: 'de', impact: 'worse' }, 'claude'));
+  ok(dispatch(st, 'add_news_flag', { symbol: 'SUBROS', metric: 'roe', impact: 'worse' }, 'claude'));
+  ok(dispatch(st, 'advance_quarter', {}, 'you'));
+  assert.equal(st.flags.find(f => f.symbol === 'PRECWIRE').status, 'confirmed');
+  assert.equal(st.flags.find(f => f.symbol === 'SUBROS').status, 'cleared');
+});
+
+test('scheduler drafts a sell when a held stock turns Remove; two strikes for daily metrics', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'AC', symbols: AC }, 'you')).basket;
+  invest(st, b.id);
+  ok(dispatch(st, 'advance_quarter', {}, 'you'));
+  const sell = st.orders.find(o => o.symbol === 'PRECWIRE' && o.side === 'sell');
+  assert.ok(sell && sell.status === 'pending' && sell.source === 'rules');
+  const st2 = createState();
+  ok(dispatch(st2, 'create_basket', { name: 'AC', symbols: AC }, 'you'));
+  st2.universe.SRF.metrics.adtv = 1;
+  ok(dispatch(st2, 'advance_day', {}, 'you'));
+  assert.equal(st2.baskets[0].statusPrev.SRF, 'pass', 'strike 1 only');
+  ok(dispatch(st2, 'advance_day', {}, 'you'));
+  assert.ok(!st2.baskets[0].symbols.includes('SRF'), 'acts on strike 2');
+});
+
+test('CRUD: baskets', () => {
+  const st = createState(); st.plan = 'pro';
+  const b = ok(dispatch(st, 'create_basket', { name: 'AC', symbols: AC }, 'you')).basket;
+  assert.equal(ok(dispatch(st, 'update_basket', { basket_id: b.id, name: 'Renamed', description: 'note' }, 'claude')).basket.name, 'Renamed');
+  assert.equal(dispatch(st, 'update_basket', { basket_id: b.id, theme: 'nope' }, 'you').error.code, 'bad_theme');
+  const d = ok(dispatch(st, 'duplicate_basket', { basket_id: b.id }, 'you')).basket;
+  assert.equal(d.count, b.count);
+  invest(st, b.id);
+  const cashBefore = st.cash;
+  assert.equal(dispatch(st, 'delete_basket', { basket_id: b.id }, 'claude').error.code, 'person_only');
+  const del = ok(dispatch(st, 'delete_basket', { basket_id: b.id }, 'you'));
+  assert.ok(del.returnedCash > 40000);
+  assert.ok(Math.abs(st.cash - (cashBefore + del.returnedCash)) < 1);
+  assert.equal(st.baskets.length, 1);
+});
+
+test('CRUD: basket stocks, orders, holdings', () => {
+  const st = createState(); st.plan = 'pro';
+  const b = ok(dispatch(st, 'create_basket', { name: 'AC', symbols: AC }, 'you')).basket;
+  ok(dispatch(st, 'remove_stock', { basket_id: b.id, symbol: 'SRF' }, 'you'));
+  assert.ok(!st.baskets[0].symbols.includes('SRF'));
+  assert.equal(st.baskets[0].symbols.length, 6, 'refill added a replacement (not invested yet)');
+  const o = ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 50000 }, 'you')).orders;
+  assert.equal(ok(dispatch(st, 'update_order', { order_id: o[0].id, qty: 2 }, 'you')).order.qty, 2);
+  ok(dispatch(st, 'cancel_order', { order_id: o[1].id }, 'you'));
+  ok(dispatch(st, 'confirm_order', { order_ids: o.map(x => x.id) }, 'you'));
+  assert.equal(st.orders.find(x => x.id === o[1].id).status, 'cancelled');
+  assert.equal(dispatch(st, 'remove_stock', { basket_id: b.id, symbol: o[0].symbol }, 'you').error.code, 'has_holding');
+  const sell = ok(dispatch(st, 'remove_stock', { basket_id: b.id, symbol: o[0].symbol, sell: true }, 'you')).orders[0];
+  ok(dispatch(st, 'confirm_order', { order_id: sell.id }, 'you'));
+  assert.ok(!st.baskets[0].symbols.includes(o[0].symbol));
+  const t = ok(dispatch(st, 'create_basket', { name: 'Mine', kind: 'tracking', holdings: [{ symbol: 'VOLTAS', qty: 10, avg_price: 1200 }] }, 'you')).basket;
+  ok(dispatch(st, 'set_holding', { basket_id: t.id, symbol: 'VOLTAS', qty: 25, avg_price: 1100 }, 'you'));
+  assert.equal(st.baskets.find(x => x.id === t.id).holdings.VOLTAS.qty, 25);
+  ok(dispatch(st, 'remove_stock', { basket_id: t.id, symbol: 'VOLTAS' }, 'you'));
+  assert.equal(st.baskets.find(x => x.id === t.id).holdings.VOLTAS, undefined);
+});
+
+test('CRUD: flags, alerts, candidates, journal, rules reset', () => {
+  const st = createState(); st.plan = 'pro';
+  const b = ok(dispatch(st, 'create_basket', { name: 'AC', symbols: AC }, 'you')).basket;
+  invest(st, b.id);
+  const f = ok(dispatch(st, 'add_news_flag', { symbol: 'PRECWIRE', metric: 'de', impact: 'worse' }, 'you'));
+  ok(dispatch(st, 'update_news_flag', { flag_id: f.flag.id, note: 'edited' }, 'you'));
+  const w = ok(dispatch(st, 'delete_news_flag', { flag_id: f.flag.id }, 'you'));
+  assert.equal(w.cancelledOrders, 1);
+  const a = st.alerts[0].id;
+  ok(dispatch(st, 'dismiss_alert', { alert_id: a }, 'you'));
+  assert.ok(!st.alerts.some(x => x.id === a));
+  ok(dispatch(st, 'clear_alerts', {}, 'you')); assert.equal(st.alerts.length, 0);
+  ok(dispatch(st, 'add_candidate', { symbol: 'TESTCO', name: 'Test', sector: 'Energy', themes: { energy: 100 } }, 'claude'));
+  ok(dispatch(st, 'add_candidate', { symbol: 'TESTCO', name: 'Test Co 2' }, 'you'));
+  assert.equal(st.universe.TESTCO.name, 'Test Co 2');
+  assert.equal(dispatch(st, 'delete_candidate', { symbol: 'SRF' }, 'you').error.code, 'protected');
+  ok(dispatch(st, 'delete_candidate', { symbol: 'TESTCO' }, 'you'));
+  const f2 = ok(dispatch(st, 'add_news_flag', { symbol: 'PRECWIRE', metric: 'de', impact: 'worse' }, 'you'));
+  ok(dispatch(st, 'cancel_order', { order_id: f2.drafted_orders[0].id, reason: 'one-off' }, 'you'));
+  const j = st.journal[0];
+  ok(dispatch(st, 'update_journal', { id: j.id, reason: 'capex debt' }, 'you'));
+  ok(dispatch(st, 'delete_journal', { id: j.id }, 'you'));
+  ok(dispatch(st, 'set_rule', { basket_id: b.id, rule_id: 'de', green: 0.3, red: 0.6 }, 'you'));
+  ok(dispatch(st, 'reset_rules', { basket_id: b.id }, 'you'));
+  assert.equal(st.baskets[0].rules.metrics.find(r => r.id === 'de').red, 1);
+});
+
+test('plans: free gates apply to both doors the same way; safety is never gated', () => {
+  for (const actor of ['you', 'claude']) {
+    const st = createState();
+    const b = ok(dispatch(st, 'create_basket', { name: 'A', symbols: AC }, actor)).basket;
+    assert.equal(dispatch(st, 'create_basket', { name: 'B', symbols: ['VOLTAS'] }, actor).error.code, 'pro_feature');
+    assert.equal(dispatch(st, 'set_rule', { basket_id: b.id, rule_id: 'de', green: 0.4, red: 0.9 }, actor).error.code, 'pro_feature');
+    assert.equal(dispatch(st, 'toggle_rule', { basket_id: b.id, rule_id: 'ev_surv', enabled: true }, actor).error.code, 'pro_feature');
+    for (let i = 0; i < 3; i++) ok(dispatch(st, 'add_news_flag', { symbol: 'SRF', metric: 'peg', impact: 'better' }, actor));
+    assert.equal(dispatch(st, 'add_news_flag', { symbol: 'SRF', metric: 'peg', impact: 'better' }, actor).error.code, 'pro_feature');
+    assert.equal(ok(dispatch(st, 'get_rule_scorecard', { basket_id: b.id }, actor)).locked, true);
+    st.universe.SRF.metrics.de = 3;
+    ok(dispatch(st, 'advance_day', {}, actor));
+    assert.ok(st.alerts.some(a => a.critical && a.symbol === 'SRF'));
+  }
+});
+
+test('parity: every MCP tool gives the same result as the website door', () => {
+  const run = actor => {
+    const st = createState(); st.plan = 'pro';
+    const out = {};
+    const c = (op, a) => { const r = dispatch(st, op, a, actor); out[op] = r.ok ? strip(r.data) : r.error.code; return r; };
+    c('get_universe', { sector: 'Energy', profitable_years: 2 });
+    c('add_candidate', { symbol: 'TESTCO', name: 'Test Co', stage: 'power', themes: { energy: 100 }, metrics: { adtv: 20 } });
+    const b = c('create_basket', { name: 'AC', symbols: AC }).data.basket;
+    c('update_basket', { basket_id: b.id, description: 'x' });
+    c('add_stock', { basket_id: b.id, symbol: 'SUBROS' });
+    c('remove_stock', { basket_id: b.id, symbol: 'SUBROS' });
+    c('get_basket_status', { basket_id: b.id });
+    c('set_rule', { basket_id: b.id, rule_id: 'de', green: 0.45, red: 0.95 });
+    c('toggle_rule', { basket_id: b.id, rule_id: 'peg', enabled: false });
+    c('set_basket_rule', { basket_id: b.id, max_stage_weight: 45 });
+    c('create_order', { basket_id: b.id, side: 'buy', amount: 50000 });
+    c('get_alerts', {});
+    c('get_refill_plan', { basket_id: b.id });
+    c('add_news_flag', { symbol: 'PRECWIRE', metric: 'de', impact: 'worse', note: 'x' });
+    c('get_rule_scorecard', { basket_id: b.id });
+    c('exit_basket', { basket_id: b.id });
+    c('get_activity', {});
+    return out;
+  };
+  const a = run('you'), b = run('claude');
+  for (const t of TOOLS) {
+    assert.ok(PARITY[t.name], `website path for ${t.name}`);
+    assert.ok(t.name in a, `exercised ${t.name}`);
+    assert.deepEqual(a[t.name], b[t.name], t.name);
+  }
+});
+function strip(x) { return JSON.parse(JSON.stringify(x, (k, v) => (['source', 'editedBy', 'createdAt', 'confirmedBy', 'activity', 'by', 'detail'].includes(k) ? undefined : v))); }
+
+test('refill ladder holds cash and asks for new stocks when nothing fits', () => {
+  const st = createState();
+  ok(dispatch(st, 'create_basket', { name: 'AC', symbols: AC }, 'you'));
+  const basket = st.baskets[0];
+  basket.limits.minStocks = 8; basket.limits.maxStageWeight = 15;
+  const plan = refillPlan(st, basket);
+  assert.ok(plan.short > 0);
+  assert.match(plan.prompt, /add_candidate/);
+});
+
+test('exit basket: sells everything, cancels pending orders, returns cash, keeps the basket', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'AC', symbols: AC }, 'you')).basket;
+  invest(st, b.id);
+  const pendingBuy = ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', symbol: 'SRF', qty: 1 }, 'you')).orders[0];
+  const ex = ok(dispatch(st, 'exit_basket', { basket_id: b.id }, 'claude'));
+  assert.equal(st.orders.find(o => o.id === pendingBuy.id).status, 'cancelled');
+  assert.equal(ex.orders.length, 6);
+  assert.equal(dispatch(st, 'confirm_order', { order_ids: ex.orders.map(o => o.id) }, 'claude').error.code, 'person_only');
+  const r = ok(dispatch(st, 'confirm_order', { order_ids: ex.orders.map(o => o.id) }, 'you'));
+  assert.equal(r.exits.length, 1);
+  assert.ok(Math.abs(st.cash - 100000) < 1500, 'practice cash is back near the start');
+  const view = ok(dispatch(st, 'get_basket_status', { basket_id: b.id }, 'you')).basket;
+  assert.equal(view.isInvested, false); assert.equal(view.count, 6); assert.equal(view.cash, 0);
+  assert.equal(st.orders.filter(o => o.basketId === b.id && o.status === 'pending').length, 0, 'no replacement drafted after an exit');
+});
+
+test('activity: every Claude call is logged in plain words; to-do shows what the user must do', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'RELIANCE'] }, 'claude')).basket;
+  ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 50000 }, 'claude'));
+  dispatch(st, 'delete_basket', { basket_id: b.id }, 'claude');
+  dispatch(st, 'get_basket_status', {}, 'you'); // the website's own reads are not Claude activity
+  const act = ok(dispatch(st, 'get_activity', {}, 'claude'));
+  assert.equal(act.activity.length, 3, 'create, order, refused delete (get_activity logs after it runs)');
+  assert.match(act.activity[2].text, /Created basket "Energy"/);
+  assert.equal(act.activity[1].kind, 'needs_you');
+  assert.equal(act.activity[0].ok, false);
+  assert.ok(act.activity[0].at && act.activity[0].clock);
+  const todo = act.todo[0];
+  assert.equal(todo.kind, 'orders'); assert.equal(todo.by, 'Claude'); assert.match(todo.text, /Confirm \d+ orders in Energy/);
+  assert.equal(st.activity[0].tool, 'get_activity');
+});
+
+test('create_basket keeps every segment within its limit of the final basket', () => {
+  const st = createState();
+  const u = ok(dispatch(st, 'get_universe', { theme: 'energy', profitable_years: 2 }, 'claude')).stocks.filter(x => x.status !== 'remove').map(x => x.symbol);
+  const b = ok(dispatch(st, 'create_basket', { name: 'E', symbols: u }, 'claude'));
+  const seg = {};
+  for (const s of b.basket.stocks) seg[s.stage] = (seg[s.stage] || 0) + 1;
+  for (const n of Object.values(seg)) assert.ok(n / b.basket.count <= 0.4 + 1e-9, JSON.stringify(seg));
+  assert.ok(b.skipped.filter(x => /Basket full/.test(x.why)).length > 0);
+  assert.equal(b.basket.count, 8);
+});

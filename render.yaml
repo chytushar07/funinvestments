@@ -1,0 +1,22 @@
+# Render Blueprint: Render → New → Blueprint → pick this GitHub repo.
+# Uses the Starter plan + a 1 GB disk so baskets, orders and Claude's activity survive restarts.
+# (The free plan works too, but it sleeps when idle and wipes saved data on every restart.)
+services:
+  - type: web
+    name: funinvestments
+    runtime: node
+    plan: starter
+    buildCommand: "echo no build needed"
+    startCommand: node server/server.js
+    healthCheckPath: /healthz
+    disk:
+      name: fi-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      - key: FI_API_KEY
+        generateValue: true
