@@ -241,13 +241,15 @@ const SHEETS = {
     }, [g, rd]);
     useEffect(() => { if (!pro) read('track_event', { name: 'upgrade_moment_shown', props: { feature: 'edit thresholds' } }); }, []);
     if (!r) return null;
-    const lo = Math.min(r.good, r.bad), hi = Math.max(r.good, r.bad), step = (hi - lo) > 50 ? 1 : (hi - lo) > 5 ? 0.5 : 0.05;
+    const lo0 = Math.min(r.good, r.bad), hi0 = Math.max(r.good, r.bad), step = (hi0 - lo0) > 50 ? 1 : (hi0 - lo0) > 5 ? 0.5 : 0.05;
+    // Snap the range to whole steps so the slider only lands on round values (no "60.2").
+    const lo = Math.floor(lo0 / step) * step, hi = Math.ceil(hi0 / step) * step;
     const valid = r.dir === 'higher' ? g >= rd : g <= rd;
     const unit = r.unit === '%' ? '%' : r.unit === '×' ? '×' : '';
     return html`<div class="stack" style="gap:14px"><div class="row between"><h2>${r.long}</h2>${r.critical && html`<span class="tag claude">★ Must-pass</span>`}</div>
       <span class="muted" style="font-size:13px">${def ? 'Default rule: new baskets start with it, and it rates stocks on Home and Explore.' : `Applies to ${b.name} only.`} <${Info} k=${r.id}/></span>
-      <div class="field"><label for="rs-g">Green ${r.dir === 'higher' ? 'at or above' : 'at or below'} <b class="num">${g}${unit}</b></label><input type="range" id="rs-g" min=${lo} max=${hi} step=${step} value=${g} disabled=${!pro} onInput=${e => setG(Number(e.target.value))}/></div>
-      <div class="field"><label for="rs-r">Red ${r.dir === 'higher' ? 'below' : 'above'} <b class="num">${rd}${unit}</b></label><input type="range" id="rs-r" min=${lo} max=${hi} step=${step} value=${rd} disabled=${!pro} onInput=${e => setRd(Number(e.target.value))}/></div>
+      <div class="field"><label for="rs-g">Green ${r.dir === 'higher' ? 'at or above' : 'at or below'} <b class="num">${g}${unit}</b></label><input type="range" id="rs-g" min=${lo} max=${hi} step=${step} value=${g} disabled=${!pro} onInput=${e => setG(+Number(e.target.value).toFixed(2))}/></div>
+      <div class="field"><label for="rs-r">Red ${r.dir === 'higher' ? 'below' : 'above'} <b class="num">${rd}${unit}</b></label><input type="range" id="rs-r" min=${lo} max=${hi} step=${step} value=${rd} disabled=${!pro} onInput=${e => setRd(+Number(e.target.value).toFixed(2))}/></div>
       ${!valid && html`<span class="down" style="font-size:13px">Green can't be ${r.dir === 'higher' ? 'below' : 'above'} red.</span>`}
       ${pro ? (wi && valid ? html`<div class="card stack" style="gap:6px"><b>What if</b><span class="muted" style="font-size:13px">${wi.changes.length ? wi.changes.slice(0, 6).map(c => `${shortName(c.name)} ${STATUS[c.from][1]} → ${STATUS[c.to][1]}${c.inBasket ? ' (in basket)' : ''}`).join(' · ') : 'No status changes today'}</span>
           <span class="faint" style="font-size:12px">Past test, good exit calls: ${wi.backtest.before.removalsRight} of ${wi.backtest.before.removalsTotal} → ${wi.backtest.after.removalsRight} of ${wi.backtest.after.removalsTotal}</span></div>` : null)
