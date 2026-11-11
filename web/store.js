@@ -77,3 +77,19 @@ export async function copy(text) {
 export function confirmDialog({ title, body, confirm = 'Confirm', danger = false, onConfirm }) {
   openSheet({ type: 'confirm', title, body, confirm, danger, onConfirm });
 }
+
+// Deleting a notification also cancels the orders it is waiting on, so ask first when there are any.
+const linked = alerts => alerts.flatMap(a => (a.action?.kind === 'orders' ? a.action.ids : [])).filter(id => store.S.orders.find(o => o.id === id)?.status === 'pending');
+const plural = (n, w) => `${n} waiting ${w}${n === 1 ? '' : 's'}`;
+export function deleteAlert(a) {
+  const n = linked([a]).length;
+  const run = () => act('dismiss_alert', { alert_id: a.id }, { ok: n ? `Deleted · ${plural(n, 'order')} cancelled` : 'Notification deleted' });
+  if (!n) return run();
+  confirmDialog({ title: 'Delete this notification?', body: `It also cancels its ${plural(n, 'order')}. Your baskets and shares stay as they are.`, confirm: 'Delete both', danger: true, onConfirm: run });
+}
+export function clearAlerts(close) {
+  const n = linked(store.S.alerts || []).length;
+  close?.();
+  confirmDialog({ title: 'Clear all notifications?', body: n ? `This removes every notification and cancels the ${plural(n, 'order')} they were waiting on. Your baskets and shares stay as they are.` : 'This removes every notification. Orders and baskets are not affected.', confirm: 'Clear all', danger: true,
+    onConfirm: () => act('clear_alerts', {}, { ok: n ? `Cleared · ${plural(n, 'order')} cancelled` : 'Notifications cleared' }) });
+}

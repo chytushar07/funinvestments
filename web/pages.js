@@ -1,6 +1,6 @@
 // Pages. Every number comes from the engine snapshot (store.S) or a read op.
 import { html, useState, useEffect, useRef } from './vendor/preact-htm.js';
-import { store, act, read, go, goSheet, openSheet, copy, toast, confirmDialog } from './store.js';
+import { store, act, read, go, goSheet, openSheet, copy, toast, confirmDialog, deleteAlert, clearAlerts } from './store.js';
 import * as api from './client.js';
 import { inr, inr2, pct, cls, short, dateLabel, shortName, STATUS, Pill, Src, Avatar, Mock, Chg, I, Sparkline, Stepper, Switch, ProLock, Empty, ruleLimits } from './lib.js';
 import { Info } from './glossary.js';
@@ -509,7 +509,7 @@ export function Alerts() {
   const icon = a => (a.critical ? ['crit', '✕'] : ['news', 'flag_confirmed', 'flag_cleared', 'filing'].includes(a.type) ? ['news', '⚑'] : a.type === 'refill' ? ['refill', '↻'] : a.type === 'drift' ? ['', '⇄'] : a.type === 'strike' ? ['', '1'] : ['', '•']);
   const bname = id => S.baskets.find(b => b.id === id)?.name;
   return html`<div>
-    <div class="row between" style="margin-top:4px"><h1>Alerts</h1>${S.alerts.length > 0 && html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Clear all alerts?', body: 'This removes every alert. Orders and baskets are not affected.', confirm: 'Clear all', danger: true, onConfirm: () => act('clear_alerts', {}, { ok: 'Cleared' }) })}>Clear all</button>`}</div>
+    <div class="row between" style="margin-top:4px"><h1>Alerts</h1>${S.alerts.length > 0 && html`<button class="linkbtn" onClick=${() => clearAlerts()}>Clear all</button>`}</div>
     <div class="chips" style="margin-top:14px">${[['all', 'All'], ['critical', 'Urgent'], ['news', 'News'], ['refill', 'Replacements']].map(([v, l]) => html`<button key=${v} class="chip ${f === v ? 'on' : ''}" onClick=${() => setF(v)}>${l}</button>`)}</div>
     ${list.length ? html`<div style="margin-top:6px">${list.map(a => {
       const [ic, sym] = icon(a);
@@ -522,7 +522,7 @@ export function Alerts() {
           ${orders.length > 0 && html`<button class="btn small" onClick=${() => openSheet({ type: 'review', ids: orders })}>Review</button>`}
           ${a.action?.kind === 'rebalance' && S.baskets.some(b => b.id === a.action.basketId) && html`<button class="btn small" onClick=${() => openSheet({ type: 'rebalance', id: a.action.basketId })}>Rebalance</button>`}
           ${a.action?.kind === 'claude' && html`<button class="btn small" onClick=${() => copy(a.action.prompt)}>Copy prompt</button>`}
-          <button class="iconlink" aria-label="Dismiss alert" onClick=${() => act('dismiss_alert', { alert_id: a.id })}>${I.x}</button></div></div>`;
+          <button class="iconlink" aria-label="Dismiss alert" onClick=${() => deleteAlert(a)}>${I.x}</button></div></div>`;
     })}</div>`
     : html`<${Empty} title="All quiet"><span class="muted">Alerts appear when a stock's status changes, new results come out, or a basket needs a replacement stock.</span></${Empty}>`}
   </div>`;

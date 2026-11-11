@@ -609,3 +609,26 @@ test('the return right after buying says it is the trading cost', () => {
   assert.ok(Math.abs(v.pnl + v.costs) < 1, `pnl ${v.pnl} vs costs ${v.costs}`);
   assert.match(v.pnlNote, /trading cost/);
 });
+
+test('alerts: deleting a notification also cancels its waiting orders; clear all does the same', () => {
+  const st = createState(); st.plan = 'pro';
+  const b = ok(dispatch(st, 'create_basket', { name: 'AC', symbols: AC }, 'you')).basket;
+  invest(st, b.id);
+  st.universe.SRF.metrics.de = 2; // must-pass rule breaks → Sell drafted with an alert
+  ok(dispatch(st, 'advance_day', {}, 'you'));
+  const al = st.alerts.find(a => a.action?.kind === 'orders');
+  assert.ok(al, 'an alert with a drafted order');
+  const ids = al.action.ids;
+  assert.ok(ids.every(id => st.orders.find(o => o.id === id).status === 'pending'));
+  const r = ok(dispatch(st, 'dismiss_alert', { alert_id: al.id }, 'you'));
+  assert.equal(r.cancelled.length, ids.length);
+  assert.ok(ids.every(id => st.orders.find(o => o.id === id).status === 'cancelled'));
+  assert.ok(!st.alerts.some(a => a.id === al.id));
+  assert.ok(!ok(dispatch(st, 'get_activity', {}, 'you')).todo.some(t => t.kind === 'orders' && t.ids.some(id => ids.includes(id))));
+  assert.match(st.activity[0].text, /Deleted notification .* cancelled/);
+  // A plain alert deletes without touching orders
+  const before = st.orders.filter(o => o.status === 'pending').length;
+  ok(dispatch(st, 'clear_alerts', {}, 'you'));
+  assert.equal(st.alerts.length, 0);
+  assert.ok(st.orders.filter(o => o.status === 'pending').length <= before);
+});

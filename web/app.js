@@ -3,7 +3,7 @@
 import { html, render, useState, useEffect } from './vendor/preact-htm.js';
 import * as notify from './notify.js';
 import * as api from './client.js';
-import { store, refresh, act, go, toast, openSheet, closeSheet, confirmDialog } from './store.js';
+import { store, refresh, act, go, toast, openSheet, closeSheet, confirmDialog, deleteAlert, clearAlerts } from './store.js';
 import { I, Logo, short } from './lib.js';
 import { Home, Explore, Stock, Baskets, Basket, Orders, Alerts, Pricing, Account, About, Activity, PlanSwitch, DefaultRules } from './pages.js';
 import { Tour } from './tour.js';
@@ -55,13 +55,13 @@ function NotifPanel({ onClose }) {
     return () => clearTimeout(t);
   }, []);
   const ic = a => (a.critical ? ['crit', '✕'] : ['news', 'flag_confirmed', 'flag_cleared', 'filing'].includes(a.type) ? ['news', '⚑'] : a.type === 'refill' ? ['refill', '↻'] : a.type === 'drift' ? ['', '⇄'] : ['', '•']);
-  const clearAll = () => { onClose(); confirmDialog({ title: 'Clear all notifications?', body: 'This removes every notification. Orders and baskets are not affected.', confirm: 'Clear all', danger: true, onConfirm: () => act('clear_alerts', {}, { ok: 'Notifications cleared' }) }); };
+  const clearAll = () => clearAlerts(onClose);
   return html`<div class="notif-pop" role="dialog" aria-label="Notifications">
     <div class="notif-head"><b>Notifications</b>${list.length > 0 && html`<button class="linkbtn danger" onClick=${clearAll}>Clear all</button>`}</div>
     ${list.length ? html`<div class="notif-list">${list.slice(0, 30).map(a => { const [c, sym] = ic(a); return html`<div key=${a.id} class="notif-item ${a.read ? '' : 'unread'}">
         <span class="ic ${c}" aria-hidden="true">${sym}</span>
         <span class="grow"><span class="t">${a.text}</span><span class="s">${short(a.date)}${bname(a.basketId) ? ' · ' + bname(a.basketId) : ''}</span></span>
-        <button class="iconlink" aria-label="Delete notification" title="Delete" onClick=${e => { e.stopPropagation(); act('dismiss_alert', { alert_id: a.id }); }}>${I.x}</button></div>`; })}</div>`
+        <button class="iconlink" aria-label="Delete notification" title="Delete" onClick=${e => { e.stopPropagation(); deleteAlert(a); }}>${I.x}</button></div>`; })}</div>`
     : html`<div class="notif-empty muted">No notifications</div>`}
     ${list.length > 0 && html`<button class="notif-foot linkbtn" onClick=${() => { onClose(); go('alerts'); }}>See all alerts</button>`}
   </div>`;

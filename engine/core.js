@@ -1016,8 +1016,21 @@ const OPS = {
     return { alerts: list.slice(0, a.limit || 50), unread: st.alerts.filter(x => !x.read).length };
   },
   mark_alerts_read(st, a) { for (const x of st.alerts) if (!a.ids || a.ids.includes(x.id)) x.read = true; return { ok: true }; },
-  dismiss_alert(st, a) { const n = st.alerts.length; st.alerts = st.alerts.filter(x => x.id !== a.alert_id); if (n === st.alerts.length) throw new ApiError('not_found', 'No such alert'); return { dismissed: a.alert_id }; },
-  clear_alerts(st, a) { const n = st.alerts.length; st.alerts = st.alerts.filter(x => a.basket_id && x.basketId !== a.basket_id); return { cleared: n - st.alerts.length }; },
+  // Deleting a notification also deletes its action: any order it drafted that is still waiting is cancelled,
+  // so Orders, the to-do list and the basket all stay in step with what the person sees.
+  dismiss_alert(st, a, actor) {
+    const al = st.alerts.find(x => x.id === a.alert_id);
+    if (!al) throw new ApiError('not_found', 'No such alert');
+    const cancelled = dropAlertActions(st, [al], actor);
+    st.alerts = st.alerts.filter(x => x.id !== a.alert_id);
+    return { dismissed: a.alert_id, text: al.text, cancelled };
+  },
+  clear_alerts(st, a, actor) {
+    const gone = st.alerts.filter(x => !a.basket_id || x.basketId === a.basket_id);
+    const cancelled = dropAlertActions(st, gone, actor);
+    st.alerts = st.alerts.filter(x => !gone.includes(x));
+    return { cleared: gone.length, cancelled };
+  },
 
   get_refill_plan(st, a) {
     const b = getBasket(st, a.basket_id);
@@ -1196,6 +1209,19 @@ const OPS = {
 // What the user should do next, most urgent first: orders with a sell the rules or news asked for,
 // then other orders, urgent alerts that have no order to confirm, baskets short of stocks,
 // baskets not invested yet, and last the news flags that only wait for results.
+function dropAlertActions(st, alerts, actor) {
+  const out = [];
+  for (const al of alerts) {
+    if (al.action?.kind !== 'orders') continue;
+    for (const id of al.action.ids) {
+      const o = st.orders.find(x => x.id === id && x.status === 'pending');
+      if (!o) continue;
+      OPS.cancel_order(st, { order_id: id, reason: 'Notification deleted' }, actor);
+      out.push({ id: o.id, name: o.name, side: o.side, qty: o.qty });
+    }
+  }
+  return out;
+}
 function todoList(st) {
   const out = [];
   const bname = id => st.baskets.find(b => b.id === id)?.name || 'a basket';
@@ -1247,6 +1273,8 @@ function activitySummary(st, op, a, res) {
       const where = [...new Set(d.filled.map(o => o.basketId))];
       return { text: d.exits.length ? `Exited "${d.exits[0].name}": ${fmtINR(d.exits[0].returnedCash)} back as cash` : `${[part(buys, 'Bought'), part(sells, 'Sold')].filter(Boolean).join(', ')}${where.length === 1 ? ` in "${bn(where[0])}"` : ''}`, kind: 'change', basketId: where[0] };
     }
+    case 'dismiss_alert': return { text: `Deleted notification "${d.text}"${d.cancelled.length ? ` and cancelled ${d.cancelled.length} waiting order${d.cancelled.length > 1 ? 's' : ''}` : ''}`, kind: 'change' };
+    case 'clear_alerts': return { text: `Cleared ${d.cleared} notification${d.cleared === 1 ? '' : 's'}${d.cancelled.length ? ` and cancelled ${d.cancelled.length} waiting order${d.cancelled.length > 1 ? 's' : ''}` : ''}`, kind: 'change' };
     case 'cancel_order': return { text: d.order.side === 'sell' && (d.order.source === 'rules' || d.order.tag === 'news_only' || d.order.tag === 'rules') ? `Kept ${d.order.name} anyway` : d.order.source === 'rules' ? `Skipped the suggested ${d.order.side} of ${d.order.name}` : `Cancelled the ${d.order.side} order for ${d.order.name}`, kind: 'change', basketId: d.order.basketId };
     case 'request_delete_basket': return { text: `Asked you to delete "${d.name}"`, kind: 'needs_you', basketId: d.requested };
     case 'keep_basket': return { text: `Kept "${d.name}"`, kind: 'change', basketId: d.kept };
@@ -1309,7 +1337,7 @@ export function dispatch(st, op, args = {}, actor = 'you') {
 // The activity log is "what happened": every Claude call (look-ups included, kind 'read') and the
 // person's own meaningful website actions (actor 'you'). Website reads, settings and failed taps are not logged.
 const USER_LOGGED = new Set(['keep_basket', 'create_basket', 'update_basket', 'duplicate_basket', 'delete_basket', 'exit_basket', 'add_stock', 'remove_stock', 'add_candidate',
-  'set_rule', 'set_rating_cutoffs', 'toggle_rule', 'reset_rules', 'apply_default_rules', 'set_basket_rule', 'confirm_order', 'cancel_order', 'add_news_flag', 'delete_news_flag', 'advance_day', 'advance_quarter']);
+  'set_rule', 'set_rating_cutoffs', 'toggle_rule', 'reset_rules', 'apply_default_rules', 'set_basket_rule', 'confirm_order', 'cancel_order', 'dismiss_alert', 'clear_alerts', 'add_news_flag', 'delete_news_flag', 'advance_day', 'advance_quarter']);
 function logActivity(st, op, args, res, actor = 'claude') {
   st.activity ||= [];
   let sum;
