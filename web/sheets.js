@@ -71,11 +71,17 @@ const SHEETS = {
     const [pick, setPick] = useState(new Set(s.preset || []));
     const [result, setResult] = useState(null);
     const max = S.planInfo.maxStocks;
-    if (result) return html`<div class="stack" style="gap:14px"><h2>${result.basket.name} is ready</h2>
+    if (result) {
+      const minN = result.basket.limits?.minStocks || S.defaultLimits?.minStocks || 6, short = Math.max(0, minN - result.basket.count);
+      const bt = result.backtest, pctRight = bt.removalsTotal ? Math.round(bt.removalsRight / bt.removalsTotal * 100) : 0;
+      return html`<div class="stack" style="gap:14px"><h2>${short ? `${result.basket.name} created · add ${short} more` : `${result.basket.name} is ready`}</h2>
+      ${short > 0 && html`<span class="muted" style="font-size:13px;margin-top:-6px">A basket needs at least ${minN} stocks, so no single stock gets too big. Add ${short} more yourself, or ask Claude to find some.</span>`}
       <div class="row wrap" style="gap:6px"><${Pill} s="pass" n=${result.basket.counts.pass}/>${result.basket.counts.watch ? html`<${Pill} s="watch" n=${result.basket.counts.watch}/>` : null}<span class="tag">${result.basket.count} stocks</span>${result.basket.themeLabel && html`<span class="tag">${result.basket.themeLabel}</span>`}</div>
       ${result.skipped.length > 0 && html`<div class="card list" style="padding:2px 16px">${result.skipped.map(x => html`<div class="li" key=${x.symbol}><span class="grow"><span class="t">${x.name || x.symbol} · skipped</span><span class="s">${x.why}</span></span></div>`)}</div>`}
-      <div class="tile"><span class="k">Past test ${result.backtest.years} <${Info} k="goodexits"/></span><span class="v">${result.backtest.removalsRight} of ${result.backtest.removalsTotal}</span><span class="faint" style="font-size:12.5px">stocks these rules dropped then did worse than the Nifty 50</span></div>
-      <div class="row" style="gap:8px"><button class="btn primary" style="flex:1" onClick=${() => go('basket-' + result.basket.id)}>Open basket</button><button class="btn ghost" style="flex:1" onClick=${() => openSheet({ type: 'invest', id: result.basket.id })}>Invest ₹</button></div></div>`;
+      <div class="tile"><span class="k">Past test ${bt.years}: when these rules said Sell <${Info} k="goodexits"/></span><span class="v">Right ${bt.removalsRight} of ${bt.removalsTotal} times</span><span class="faint" style="font-size:12.5px">${pctRight}% of the stocks they dropped then did worse than the Nifty 50 over the next year</span></div>
+      <div class="row" style="gap:8px">${short ? html`<button class="btn primary" style="flex:1" onClick=${() => { go('basket-' + result.basket.id); setTimeout(() => openSheet({ type: 'addstocks', id: result.basket.id }), 150); }}>Add ${short} more</button><button class="btn ghost" style="flex:1" onClick=${() => go('basket-' + result.basket.id)}>Open basket</button>`
+        : html`<button class="btn primary" style="flex:1" onClick=${() => go('basket-' + result.basket.id)}>Open basket</button><button class="btn ghost" style="flex:1" onClick=${() => openSheet({ type: 'invest', id: result.basket.id })}>Invest ₹</button>`}</div></div>`;
+    }
     const list = S.universe.filter(x => !q || x.name.toLowerCase().includes(q.toLowerCase()) || x.symbol.toLowerCase().includes(q.toLowerCase()) || x.sector.toLowerCase().includes(q.toLowerCase()));
     const toggle = sym => { const n = new Set(pick); if (n.has(sym)) n.delete(sym); else if (n.size < max) n.add(sym); else { toast(`Max ${max} stocks${S.plan === 'free' ? ' on Free' : ''}`, S.plan === 'free' ? { action: 'See plans', go: 'pricing' } : {}); return; } setPick(n); };
     const symbols = mode === 'pick' ? [...pick] : paste.split(/[\s,;]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
@@ -84,13 +90,18 @@ const SHEETS = {
       if (r?.ok) { await refresh(); setResult(r.data); } else if (r?.error?.skipped) toast(`${r.error.message}: ${r.error.skipped.map(x => `${x.symbol} (${x.why})`).join(', ')}`, { err: true });
     };
     const picked = S.universe.filter(x => pick.has(x.symbol));
+    // Theme is detected from the picked stocks unless the person chooses one.
+    const common = picked.length ? S.themes.find(t => picked.every(x => (x.themes || {})[t.id] > 0)) : null;
+    const autoLabel = common ? `Auto · ${common.label} (detected)` : picked.length ? 'Auto · mixed stocks, no theme' : 'Auto · from the stocks you pick';
     return html`<div class="stack" style="gap:14px"><h2>New basket</h2>
       <div class="field"><label for="nb-name">Name</label><input class="input" id="nb-name" placeholder="e.g. Profitable energy" maxlength="40" value=${name} onInput=${e => setName(e.target.value)}/></div>
       <div class="field"><label for="nb-desc">Note <span class="faint">(optional)</span></label><input class="input" id="nb-desc" placeholder="What this basket is for" maxlength="140" value=${desc} onInput=${e => setDesc(e.target.value)}/></div>
-      <div class="field"><label>Theme <${Info} k="theme"/></label><div class="chips">${[['auto', 'Auto'], ...S.themes.map(t => [t.id, t.label]), ['none', 'None']].map(([v, l]) => html`<button key=${v} class="chip ${theme === v ? 'on' : ''}" onClick=${() => setTheme(v)}>${l}</button>`)}</div></div>
+      <div class="field"><label for="nb-theme">Theme <${Info} k="theme"/></label>
+        <select id="nb-theme" class="input quietsel" value=${theme} onChange=${e => setTheme(e.target.value)}>
+          <option value="auto">${autoLabel}</option>${S.themes.map(t => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}<option value="none">No theme</option></select></div>
       <div class="seg">${[['pick', 'Pick stocks'], ['paste', 'Paste symbols']].map(([v, l]) => html`<button key=${v} class=${mode === v ? 'on' : ''} onClick=${() => setMode(v)}>${l}</button>`)}</div>
       ${mode === 'pick' ? html`
-        ${picked.length > 0 && html`<div class="chips">${picked.map(x => html`<button key=${x.symbol} class="chip on" onClick=${() => toggle(x.symbol)} aria-label="Remove ${x.name}">${shortName(x.name)} ✕</button>`)}</div>`}
+        ${picked.length > 0 && html`<div class="picksum"><span><b>${picked.length} selected:</b> ${picked.map(x => shortName(x.name)).join(', ')}</span><button class="linkbtn" onClick=${() => picked.forEach(x => toggle(x.symbol))}>Clear</button></div>`}
         <input class="input" id="nb-q" placeholder="Search stocks or sector" value=${q} onInput=${e => setQ(e.target.value)} aria-label="Search stocks"/>
         <div class="card list pick" style="padding:2px 14px">${list.map(x => html`<button key=${x.symbol} class="li btnrow" aria-pressed=${pick.has(x.symbol)} onClick=${() => toggle(x.symbol)}>
           <${Avatar} name=${x.name} stage=${x.stage}/><span class="grow"><span class="t">${x.name}</span><span class="s">${x.sector} · ${x.points} warnings · profitable ${x.profitableYears} of 5 yrs</span></span><${Pill} s=${x.status}/><span class="check">${pick.has(x.symbol) ? '✓' : ''}</span></button>`)}</div>
