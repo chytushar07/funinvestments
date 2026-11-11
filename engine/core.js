@@ -1034,6 +1034,30 @@ const OPS = {
     return { cleared: gone.length, cancelled };
   },
 
+  // Decline something on the to-do list. Orders are cancelled, a delete request keeps the basket,
+  // reminders (invest, add stocks, urgent alerts, news flags) are hidden until restored. Each decline is kept under Cleared.
+  decline_todo(st, a, actor) {
+    const t = todoList(st).find(x => x.key === a.key);
+    if (!t) throw new ApiError('not_found', 'That item is no longer pending');
+    let cancelled = [];
+    if (t.kind === 'orders') {
+      for (const id of t.ids) { const o = st.orders.find(x => x.id === id && x.status === 'pending'); if (!o) continue; OPS.cancel_order(st, { order_id: id, reason: 'Declined' }, actor); cancelled.push({ id: o.id, name: o.name, side: o.side, qty: o.qty }); }
+    } else if (t.kind === 'delete') OPS.keep_basket(st, { basket_id: t.basketId });
+    else {
+      if (t.kind === 'alerts') for (const x of st.alerts) if (x.critical) x.read = true;
+      st.declined = [...(st.declined || []).filter(d => d.key !== t.key), { key: t.key, at: st.clock }];
+    }
+    const restorable = !['orders', 'delete'].includes(t.kind) && t.kind !== 'alerts';
+    archiveAlerts(st, [{ id: nid(st, 'a'), type: 'declined', date: st.clock, basketId: t.basketId, text: `Declined: ${t.text}`, why: [t.detail], key: restorable ? t.key : null }], actor, []);
+    st.clearedAlerts[0].cancelled = cancelled;
+    return { declined: t.key, text: t.text, cancelled };
+  },
+  restore_todo(st, a) {
+    st.declined = (st.declined || []).filter(d => d.key !== a.key);
+    st.clearedAlerts = (st.clearedAlerts || []).filter(x => x.key !== a.key);
+    return { restored: a.key };
+  },
+
   get_refill_plan(st, a) {
     const b = getBasket(st, a.basket_id);
     const p = refillPlan(st, b);
@@ -1253,7 +1277,9 @@ function todoList(st) {
   for (const b of st.baskets) if (b.kind === 'model' && !invested(b) && !groups[b.id] && b.symbols.length >= b.limits.minStocks) out.push({ kind: 'invest', priority: 4, basketId: b.id, text: `Invest in ${b.name}`, detail: 'Not invested yet' });
   const flags = st.flags.filter(f => f.status === 'open');
   if (flags.length) out.push({ kind: 'flags', priority: 5, text: `${flags.length} news flag${flags.length > 1 ? 's' : ''} waiting for results`, detail: flags.map(f => `${f.name}: ${f.metricLabel}`).join(' · ') });
-  return out.sort((a, b) => a.priority - b.priority);
+  const hidden = new Set((st.declined || []).map(d => d.key));
+  for (const t of out) t.key = t.kind + (t.basketId ? ':' + t.basketId : '');
+  return out.filter(t => t.kind === 'orders' || t.kind === 'delete' || !hidden.has(t.key)).sort((a, b) => a.priority - b.priority);
 }
 
 const READ_LABEL = { get_universe: 'Looked through the stock list', get_basket_status: 'Checked basket status', get_alerts: 'Read your alerts', get_refill_plan: 'Checked replacement options', get_rule_scorecard: 'Read the past test', get_activity: 'Caught up on recent activity', get_rules: 'Read your rules', get_orders: 'Checked orders', get_state: 'Checked the app' };
@@ -1283,6 +1309,7 @@ function activitySummary(st, op, a, res) {
       const where = [...new Set(d.filled.map(o => o.basketId))];
       return { text: d.exits.length ? `Exited "${d.exits[0].name}": ${fmtINR(d.exits[0].returnedCash)} back as cash` : `${[part(buys, 'Bought'), part(sells, 'Sold')].filter(Boolean).join(', ')}${where.length === 1 ? ` in "${bn(where[0])}"` : ''}`, kind: 'change', basketId: where[0] };
     }
+    case 'decline_todo': return { text: `Declined "${d.text}"${d.cancelled.length ? ` · cancelled ${d.cancelled.length} order${d.cancelled.length > 1 ? 's' : ''}` : ''}`, kind: 'change' };
     case 'dismiss_alert': return { text: `Deleted notification "${d.text}"${d.cancelled.length ? ` and cancelled ${d.cancelled.length} waiting order${d.cancelled.length > 1 ? 's' : ''}` : ''}`, kind: 'change' };
     case 'clear_alerts': return { text: `Cleared ${d.cleared} notification${d.cleared === 1 ? '' : 's'}${d.cancelled.length ? ` and cancelled ${d.cancelled.length} waiting order${d.cancelled.length > 1 ? 's' : ''}` : ''}`, kind: 'change' };
     case 'cancel_order': return { text: d.order.side === 'sell' && (d.order.source === 'rules' || d.order.tag === 'news_only' || d.order.tag === 'rules') ? `Kept ${d.order.name} anyway` : d.order.source === 'rules' ? `Skipped the suggested ${d.order.side} of ${d.order.name}` : `Cancelled the ${d.order.side} order for ${d.order.name}`, kind: 'change', basketId: d.order.basketId };
@@ -1347,7 +1374,7 @@ export function dispatch(st, op, args = {}, actor = 'you') {
 // The activity log is "what happened": every Claude call (look-ups included, kind 'read') and the
 // person's own meaningful website actions (actor 'you'). Website reads, settings and failed taps are not logged.
 const USER_LOGGED = new Set(['keep_basket', 'create_basket', 'update_basket', 'duplicate_basket', 'delete_basket', 'exit_basket', 'add_stock', 'remove_stock', 'add_candidate',
-  'set_rule', 'set_rating_cutoffs', 'toggle_rule', 'reset_rules', 'apply_default_rules', 'set_basket_rule', 'confirm_order', 'cancel_order', 'dismiss_alert', 'clear_alerts', 'add_news_flag', 'delete_news_flag', 'advance_day', 'advance_quarter']);
+  'set_rule', 'set_rating_cutoffs', 'toggle_rule', 'reset_rules', 'apply_default_rules', 'set_basket_rule', 'confirm_order', 'cancel_order', 'dismiss_alert', 'clear_alerts', 'decline_todo', 'add_news_flag', 'delete_news_flag', 'advance_day', 'advance_quarter']);
 function logActivity(st, op, args, res, actor = 'claude') {
   st.activity ||= [];
   let sum;

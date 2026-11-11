@@ -636,3 +636,21 @@ test('alerts: deleting a notification also cancels its waiting orders; clear all
   assert.equal(st.clearedAlerts.length, archived + left);
   assert.ok(st.orders.filter(o => o.status === 'pending').length <= before);
 });
+
+test('pending: decline hides a reminder (restorable) and cancels waiting orders', () => {
+  const st = createState(); st.plan = 'pro';
+  const b = ok(dispatch(st, 'create_basket', { name: 'AC', symbols: AC }, 'you')).basket;
+  const todo = () => ok(dispatch(st, 'get_activity', {}, 'you')).todo;
+  const inv = todo().find(t => t.kind === 'invest');
+  ok(dispatch(st, 'decline_todo', { key: inv.key }, 'you'));
+  assert.ok(!todo().some(t => t.key === inv.key));
+  assert.equal(ok(dispatch(st, 'get_state', {}, 'you')).clearedAlerts[0].key, inv.key);
+  ok(dispatch(st, 'restore_todo', { key: inv.key }, 'you'));
+  assert.ok(todo().some(t => t.key === inv.key));
+  const ids = ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 50000 }, 'claude')).orders.map(o => o.id);
+  const ot = todo().find(t => t.kind === 'orders');
+  const r = ok(dispatch(st, 'decline_todo', { key: ot.key }, 'you'));
+  assert.equal(r.cancelled.length, ids.length);
+  assert.ok(ids.every(id => st.orders.find(o => o.id === id).status === 'cancelled'));
+  assert.ok(!todo().some(t => t.kind === 'orders'));
+});

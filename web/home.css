@@ -107,3 +107,4 @@ details.fold > summary::-webkit-details-marker { display: none; }
 .notif-empty { margin-top: 14px; padding: 28px 18px; display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; }
 .notif-item.cleared .t { color: var(--muted); }
 .notif-page .chip { white-space: nowrap; }
+.notif-btns { display: flex; flex-direction: column; gap: 6px; flex: none; align-items: stretch; }

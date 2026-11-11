@@ -51,7 +51,7 @@ const resetDemo = () => confirmDialog({ title: 'Start the demo over?', body: 'Th
 //   Cleared   – notifications you deleted, with any orders that were cancelled with them
 // Opening the page marks notifications read.
 const NOTIF_TAB = { v: 'active' };
-function notifIcon(a) { return a.critical ? ['crit', '✕'] : ['news', 'flag_confirmed', 'flag_cleared', 'filing'].includes(a.type) ? ['news', '⚑'] : a.type === 'refill' ? ['refill', '↻'] : a.type === 'drift' ? ['', '⇄'] : ['', '•']; }
+function notifIcon(a) { return a.type === 'declined' ? ['', '⊘'] : a.critical ? ['crit', '✕'] : ['news', 'flag_confirmed', 'flag_cleared', 'filing'].includes(a.type) ? ['news', '⚑'] : a.type === 'refill' ? ['refill', '↻'] : a.type === 'drift' ? ['', '⇄'] : ['', '•']; }
 function NotifRow({ a, cleared, open, toggle }) {
   const S = store.S;
   const [c, sym] = notifIcon(a);
@@ -64,10 +64,19 @@ function NotifRow({ a, cleared, open, toggle }) {
       ${open && html`<div class="why">${a.why.map((w, i) => html`<span key=${i}>${w}</span>`)}</div>`}
       ${cleared && a.cancelled?.length > 0 && html`<span class="s">Cancelled with it: ${a.cancelled.map(o => `${o.side} ${o.qty} ${o.name}`).join(', ')}</span>`}
       ${orders.length > 0 && html`<button class="btn small" style="align-self:flex-start;margin-top:6px" onClick=${() => openSheet({ type: 'review', ids: orders })}>Review ${orders.length} order${orders.length > 1 ? 's' : ''}</button>`}</span>
+    ${cleared && a.key && html`<button class="btn small ghost" onClick=${() => act('restore_todo', { key: a.key }, { ok: 'Restored to Pending' })}>Restore</button>`}
     ${!cleared && html`<button class="iconlink" aria-label="Delete notification" title="Delete" onClick=${() => deleteAlert(a)}>${I.x}</button>`}</div>`;
+}
+const DECLINE_BODY = { orders: t => `This cancels ${t.ids.length} waiting order${t.ids.length > 1 ? 's' : ''} in ${store.S.baskets.find(b => b.id === t.basketId)?.name || 'the basket'}. Nothing is bought or sold.`, delete: () => 'The basket is kept as it is.' };
+function declineTodo(t) {
+  const run = () => act('decline_todo', { key: t.key }, { ok: t.kind === 'orders' ? 'Declined · orders cancelled' : t.kind === 'delete' ? 'Declined · basket kept' : 'Declined · moved to Cleared' });
+  if (!DECLINE_BODY[t.kind]) return run();
+  confirmDialog({ title: `Decline "${t.text}"?`, body: DECLINE_BODY[t.kind](t), confirm: 'Decline', danger: t.kind === 'orders', onConfirm: run });
 }
 const TODO_ACT = t => t.kind === 'orders' ? ['Review', () => openSheet({ type: 'review', ids: t.ids })]
   : t.kind === 'invest' ? ['Invest', () => openSheet({ type: 'invest', id: t.basketId })]
+  : t.kind === 'delete' ? ['Review', () => go('basket-' + t.basketId)]
+  : t.kind === 'basket' ? ['Add stocks', () => go('basket-' + t.basketId)]
   : t.basketId ? ['Open', () => go('basket-' + t.basketId)] : ['Open', () => go('activity')];
 export function Notifications() {
   const S = store.S;
@@ -87,7 +96,7 @@ export function Notifications() {
     ${tab === 'pending' && (todo.length ? html`<div class="card notif-list">${todo.map((t, i) => { const [l, fn] = TODO_ACT(t); return html`<div key=${t.kind + (t.basketId || '') + i} class="notif-item">
         <span class="ic ${t.priority === 0 ? 'crit' : ''}" aria-hidden="true">!</span>
         <span class="grow"><span class="t">${t.text}</span><span class="s">${t.detail}</span></span>
-        <button class="btn small ${i ? '' : 'primary'}" onClick=${fn}>${l}</button></div>`; })}</div>`
+        <span class="notif-btns"><button class="btn small ${i ? '' : 'primary'}" onClick=${fn}>${l}</button><button class="btn small ghost" onClick=${() => declineTodo(t)}>Decline</button></span></div>`; })}</div>`
       : empty('Nothing pending', 'Orders waiting for your OK and baskets that need something show up here.'))}
     ${tab === 'active' && (active.length ? html`<div class="card notif-list">${active.map(a => html`<${NotifRow} key=${a.id} a=${a} open=${!!open[a.id]} toggle=${toggle(a.id)}/>`)}</div>`
       : empty('No notifications', "You'll see one when a stock's rating changes, new results come out, or an order is waiting for you."))}
