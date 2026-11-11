@@ -388,7 +388,7 @@ const SHEETS = {
       <dl class="kv"><dt>Money back (about)</dt><dd>${inr(p.moneyBack)}</dd><dt>${p.profit >= 0 ? 'Profit' : 'Loss'} (about)</dt><dd class=${cls(p.profit)}>${inr(Math.abs(p.profit))}</dd><dt>You put in</dt><dd>${inr(p.cost)}</dd></dl>
       <div class="sticky-cta stack" style="gap:6px"><button class="btn dangerfill block" onClick=${sellDelete}>Sell everything and delete</button>
         <button class="btn block" onClick=${keep}>Keep it</button>
-        <button class="linkbtn quietbtn" onClick=${() => exitBasket(b)}>Only sell, keep the basket</button></div></div>`;
+        <button class="linkbtn quietbtn" onClick=${async () => { if (req) await act('keep_basket', { basket_id: b.id }, { quiet: true }); exitBasket(b); }}>Only sell, keep the basket</button></div></div>`;
   },
 
   editbasket({ s }) {

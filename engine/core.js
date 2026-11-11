@@ -1239,7 +1239,7 @@ const OPS = {
 function archiveAlerts(st, alerts, actor, cancelled) {
   st.clearedAlerts ||= [];
   const byId = Object.fromEntries(cancelled.map(c => [c.id, c]));
-  for (const al of alerts) st.clearedAlerts.unshift({ ...al, read: true, clearedAt: st.clock, clearedBy: actor,
+  for (const al of alerts) st.clearedAlerts.unshift({ ...al, basketName: st.baskets.find(b => b.id === al.basketId)?.name || al.basketName || null, read: true, clearedAt: st.clock, clearedBy: actor,
     cancelled: al.action?.kind === 'orders' ? al.action.ids.map(id => byId[id]).filter(Boolean) : [] });
   if (st.clearedAlerts.length > 200) st.clearedAlerts.length = 200;
 }
@@ -1256,7 +1256,7 @@ function dropAlertActions(st, alerts, actor) {
   }
   return out;
 }
-function todoList(st) {
+function todoListRaw(st) {
   const out = [];
   const bname = id => st.baskets.find(b => b.id === id)?.name || 'a basket';
   const groups = {};
@@ -1277,9 +1277,12 @@ function todoList(st) {
   for (const b of st.baskets) if (b.kind === 'model' && !invested(b) && !groups[b.id] && b.symbols.length >= b.limits.minStocks) out.push({ kind: 'invest', priority: 4, basketId: b.id, text: `Invest in ${b.name}`, detail: 'Not invested yet' });
   const flags = st.flags.filter(f => f.status === 'open');
   if (flags.length) out.push({ kind: 'flags', priority: 5, text: `${flags.length} news flag${flags.length > 1 ? 's' : ''} waiting for results`, detail: flags.map(f => `${f.name}: ${f.metricLabel}`).join(' · ') });
-  const hidden = new Set((st.declined || []).map(d => d.key));
   for (const t of out) t.key = t.kind + (t.basketId ? ':' + t.basketId : '');
-  return out.filter(t => t.kind === 'orders' || t.kind === 'delete' || !hidden.has(t.key)).sort((a, b) => a.priority - b.priority);
+  return out.sort((a, b) => a.priority - b.priority);
+}
+function todoList(st) {
+  const hidden = new Set((st.declined || []).map(d => d.key));
+  return todoListRaw(st).filter(t => t.kind === 'orders' || t.kind === 'delete' || !hidden.has(t.key));
 }
 
 const READ_LABEL = { get_universe: 'Looked through the stock list', get_basket_status: 'Checked basket status', get_alerts: 'Read your alerts', get_refill_plan: 'Checked replacement options', get_rule_scorecard: 'Read the past test', get_activity: 'Caught up on recent activity', get_rules: 'Read your rules', get_orders: 'Checked orders', get_state: 'Checked the app' };
@@ -1342,6 +1345,14 @@ export const CLAUDE_PRO_RULES = new Set(['set_rating_cutoffs', 'set_rule', 'togg
 export const PERSON_ONLY = new Set(['confirm_order', 'set_plan', 'delete_basket', 'delete_candidate', 'delete_journal', 'clear_alerts']);
 
 // Older saves could hold several baskets with the same name: number them once (My basket, My basket 2, …).
+// A declined reminder stops being "declined" once its reason is gone (basket deleted, invested, or filled up),
+// so if the same situation comes back later it shows again instead of staying silently hidden.
+function pruneDeclined(st) {
+  if (!st.declined?.length) return;
+  const live = new Set(todoListRaw(st).map(t => t.kind + (t.basketId ? ':' + t.basketId : '')));
+  st.declined = st.declined.filter(d => live.has(d.key));
+  for (const c of st.clearedAlerts || []) if (c.key && !st.declined.some(d => d.key === c.key)) c.key = null;
+}
 function migrate(st) {
   if (st.namesUnique) return;
   const seen = new Set();
@@ -1363,6 +1374,7 @@ export function dispatch(st, op, args = {}, actor = 'you') {
   try {
     if (actor === 'claude' && CLAUDE_PRO_RULES.has(op) && !isPro(st)) throw proError('Claude editing your rules');
     const res = { ok: true, data: fn(st, args || {}, actor) };
+    pruneDeclined(st);
     if (actor === 'claude' || USER_LOGGED.has(op)) logActivity(st, op, args, res, actor);
     return res;
   } catch (e) {

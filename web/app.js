@@ -55,7 +55,7 @@ function notifIcon(a) { return a.type === 'declined' ? ['', '⊘'] : a.critical 
 function NotifRow({ a, cleared, open, toggle }) {
   const S = store.S;
   const [c, sym] = notifIcon(a);
-  const bname = S.baskets.find(b => b.id === a.basketId)?.name;
+  const bname = S.baskets.find(b => b.id === a.basketId)?.name || a.basketName;
   const orders = !cleared && a.action?.kind === 'orders' ? a.action.ids.filter(id => S.orders.find(o => o.id === id)?.status === 'pending') : [];
   return html`<div class="notif-item ${cleared || a.read ? '' : 'unread'} ${cleared ? 'cleared' : ''}">
     <span class="ic ${c}" aria-hidden="true">${sym}</span>
