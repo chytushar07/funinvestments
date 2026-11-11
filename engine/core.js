@@ -262,12 +262,15 @@ const quarterOf = d => `${d.slice(0, 4)}Q${Math.floor((Number(d.slice(5, 7)) - 1
 // below its minimum, the replacement is prepared at the same time, so the person sees both together.
 // A replacement the person declined is not drafted again until something changes: the next quarter, or the
 // basket dropping further.
+// A replacement drafted for a sell that is no longer waiting (kept anyway, or the stock recovered) is not needed.
+function dropStaleRefills(st, b, out = outgoing(st, b)) {
+  for (const o of st.orders) if (o.basketId === b.id && o.status === 'pending' && o.tag === 'refill' && o.replaces?.length && !o.replaces.some(x => out.includes(x))) cancelOrder(st, o, 'The sell it replaced was cancelled');
+}
 function ensureRefill(st, b) {
   if (b.kind !== 'model') return null;
   const out = outgoing(st, b);
   const stay = b.symbols.filter(s => !out.includes(s));
-  // A replacement drafted for a sell that is no longer waiting (kept anyway, or the stock recovered) is not needed.
-  for (const o of st.orders) if (o.basketId === b.id && o.status === 'pending' && o.tag === 'refill' && o.replaces?.length && !o.replaces.some(x => out.includes(x))) cancelOrder(st, o, 'The sell it replaced was cancelled');
+  dropStaleRefills(st, b, out);
   if (stay.length >= b.limits.minStocks) { delete b.refillDeclined; return null; }
   if (st.orders.some(o => o.basketId === b.id && o.status === 'pending' && o.tag === 'refill')) return null;
   const dec = b.refillDeclined;
@@ -301,8 +304,9 @@ function ensureRefill(st, b) {
     sellAlert.why = [...(sellAlert.why || []), `${count}. Replacement: ${orders.map(o => `buy ${o.qty} ${o.name}`).join(', ')}`, ...why];
     return { orders };
   }
-  // One "find new ones" alert is enough: don't repeat it at every check.
-  if (text && !(orders.length === 0 && st.alerts.some(a => a.basketId === b.id && a.type === 'refill' && !a.read && a.text === text))) {
+  // One "find new ones" alert per basket is enough: it is kept up to date, never repeated.
+  if (text && orders.length === 0) st.alerts = st.alerts.filter(a => !(a.basketId === b.id && a.type === 'refill' && !a.action?.ids && !a.settled));
+  if (text) {
     addAlert(st, {
       basketId: b.id, type: 'refill', text,
       why: [...why, ...(p.short ? [`${p.short} slot(s) kept as cash for now`] : [])],
@@ -1221,7 +1225,7 @@ const OPS = {
     // A declined replacement is not drafted again this quarter unless the basket loses another stock.
     const ob = st.baskets.find(x => x.id === o.basketId);
     if (o.tag === 'refill' && ob) ob.refillDeclined = { q: quarterOf(st.clock), count: staying(st, ob).length };
-    else if (ob && o.side === 'sell') ensureRefill(st, ob); // a kept stock no longer needs its replacement
+    else if (ob && o.side === 'sell') dropStaleRefills(st, ob); // a kept stock no longer needs its replacement
     if (o.source === 'rules' || o.tag === 'news_only' || o.tag === 'rules') {
       st.journal.unshift({ id: nid(st, 'j'), date: st.clock, basketId: o.basketId, symbol: o.symbol, name: o.name, action: o.side === 'sell' ? 'Kept anyway' : 'Skipped buy', rule: o.reason, reason: a.reason || '', priceThen: st.prices[o.symbol] });
       logDecision(st, { basketId: o.basketId, symbol: o.symbol, action: 'override', trigger: o.reason, source: actor, note: a.reason });
