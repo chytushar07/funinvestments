@@ -14,7 +14,7 @@ function parseHash() {
   const [r, ...rest] = h.split('-');
   if (r === 'basket' && rest.length) return { route: 'basket', param: rest.join('-') };
   if (r === 'stock' && rest.length) return { route: 'stock', param: rest.join('-') };
-  const known = ['home', 'explore', 'baskets', 'orders', 'alerts', 'pricing', 'account', 'about', 'activity', 'rules'];
+  const known = ['notifications', 'home', 'explore', 'baskets', 'orders', 'alerts', 'pricing', 'account', 'about', 'activity', 'rules'];
   return { route: known.includes(r) ? r : 'home', param: null };
 }
 
@@ -45,38 +45,59 @@ const refreshNow = async () => { if (await refresh()) toast('Up to date'); };
 const resetDemo = () => confirmDialog({ title: 'Start the demo over?', body: 'This erases every basket, order, alert, news flag and the activity log, and puts back ₹1,00,000 of practice money. It can\'t be undone.', confirm: 'Reset demo', danger: true,
   onConfirm: async () => { const r = await act('reset', {}, { ok: 'Demo reset · fresh start' }); if (r?.ok) go('home'); } });
 
-// Notification panel behind the bell: newest alerts, delete one, or clear all. Opening it marks them read.
-function NotifPanel({ onClose }) {
+// Notifications: a full page opened from the bell, in three tabs:
+//   Pending   – everything waiting for you (orders to confirm, delete requests, baskets to fix)
+//   Active    – current notifications; delete one (its waiting orders go too) or clear all
+//   Cleared   – notifications you deleted, with any orders that were cancelled with them
+// Opening the page marks notifications read.
+const NOTIF_TAB = { v: 'active' };
+function notifIcon(a) { return a.critical ? ['crit', '✕'] : ['news', 'flag_confirmed', 'flag_cleared', 'filing'].includes(a.type) ? ['news', '⚑'] : a.type === 'refill' ? ['refill', '↻'] : a.type === 'drift' ? ['', '⇄'] : ['', '•']; }
+function NotifRow({ a, cleared, open, toggle }) {
   const S = store.S;
-  const list = S.alerts || [];
-  const bname = id => S.baskets.find(b => b.id === id)?.name;
-  useEffect(() => {
-    const t = setTimeout(() => { if (store.S.unread) act('mark_alerts_read', {}); }, 1200);
-    return () => clearTimeout(t);
-  }, []);
-  const ic = a => (a.critical ? ['crit', '✕'] : ['news', 'flag_confirmed', 'flag_cleared', 'filing'].includes(a.type) ? ['news', '⚑'] : a.type === 'refill' ? ['refill', '↻'] : a.type === 'drift' ? ['', '⇄'] : ['', '•']);
-  const clearAll = () => clearAlerts(onClose);
-  return html`<div class="notif-pop" role="dialog" aria-label="Notifications">
-    <div class="notif-head"><b>Notifications</b>${list.length > 0 && html`<button class="linkbtn danger" onClick=${clearAll}>Clear all</button>`}</div>
-    ${list.length ? html`<div class="notif-list">${list.slice(0, 30).map(a => { const [c, sym] = ic(a); return html`<div key=${a.id} class="notif-item ${a.read ? '' : 'unread'}">
-        <span class="ic ${c}" aria-hidden="true">${sym}</span>
-        <span class="grow"><span class="t">${a.text}</span><span class="s">${short(a.date)}${bname(a.basketId) ? ' · ' + bname(a.basketId) : ''}</span></span>
-        <button class="iconlink" aria-label="Delete notification" title="Delete" onClick=${e => { e.stopPropagation(); deleteAlert(a); }}>${I.x}</button></div>`; })}</div>`
-    : html`<div class="notif-empty muted">No notifications</div>`}
-    ${list.length > 0 && html`<button class="notif-foot linkbtn" onClick=${() => { onClose(); go('alerts'); }}>See all alerts</button>`}
+  const [c, sym] = notifIcon(a);
+  const bname = S.baskets.find(b => b.id === a.basketId)?.name;
+  const orders = !cleared && a.action?.kind === 'orders' ? a.action.ids.filter(id => S.orders.find(o => o.id === id)?.status === 'pending') : [];
+  return html`<div class="notif-item ${cleared || a.read ? '' : 'unread'} ${cleared ? 'cleared' : ''}">
+    <span class="ic ${c}" aria-hidden="true">${sym}</span>
+    <span class="grow"><span class="t">${a.text}</span>
+      <span class="s">${short(a.date)}${bname ? ' · ' + bname : ''}${cleared ? ` · cleared ${short(a.clearedAt)}` : ''}${a.why?.length ? html` · <button class="linkbtn" style="font-size:12px" aria-expanded=${open} onClick=${toggle}>${open ? 'Hide' : 'Why?'}</button>` : null}</span>
+      ${open && html`<div class="why">${a.why.map((w, i) => html`<span key=${i}>${w}</span>`)}</div>`}
+      ${cleared && a.cancelled?.length > 0 && html`<span class="s">Cancelled with it: ${a.cancelled.map(o => `${o.side} ${o.qty} ${o.name}`).join(', ')}</span>`}
+      ${orders.length > 0 && html`<button class="btn small" style="align-self:flex-start;margin-top:6px" onClick=${() => openSheet({ type: 'review', ids: orders })}>Review ${orders.length} order${orders.length > 1 ? 's' : ''}</button>`}</span>
+    ${!cleared && html`<button class="iconlink" aria-label="Delete notification" title="Delete" onClick=${() => deleteAlert(a)}>${I.x}</button>`}</div>`;
+}
+const TODO_ACT = t => t.kind === 'orders' ? ['Review', () => openSheet({ type: 'review', ids: t.ids })]
+  : t.kind === 'invest' ? ['Invest', () => openSheet({ type: 'invest', id: t.basketId })]
+  : t.basketId ? ['Open', () => go('basket-' + t.basketId)] : ['Open', () => go('activity')];
+export function Notifications() {
+  const S = store.S;
+  const [tab, setTab] = useState(NOTIF_TAB.v);
+  const [open, setOpen] = useState({});
+  const pick = v => { NOTIF_TAB.v = v; setTab(v); };
+  useEffect(() => { const t = setTimeout(() => { if (store.S.unread) act('mark_alerts_read', {}); }, 1200); return () => clearTimeout(t); }, []);
+  const active = S.alerts || [], cleared = S.clearedAlerts || [], todo = S.todo || [];
+  const back = () => (history.length > 1 ? history.back() : go('home'));
+  const toggle = id => () => setOpen({ ...open, [id]: !open[id] });
+  const tabs = [['pending', 'Pending', todo.length], ['active', 'Notifications', active.length], ['cleared', 'Cleared', cleared.length]];
+  const empty = (t, b) => html`<div class="card notif-empty"><b>${t}</b><span class="muted">${b}</span></div>`;
+  return html`<div class="notif-page">
+    <div class="row between" style="margin-top:4px"><div class="row"><button class="iconbtn" onClick=${back} aria-label="Back">${I.back}</button><h1>Notifications</h1></div>
+      ${tab === 'active' && active.length > 0 && html`<button class="linkbtn danger" onClick=${() => clearAlerts()}>Clear all</button>`}</div>
+    <div class="chips" style="margin-top:14px" role="tablist">${tabs.map(([v, l, n]) => html`<button key=${v} role="tab" aria-selected=${tab === v} class="chip ${tab === v ? 'on' : ''}" onClick=${() => pick(v)}>${l}${n ? ` · ${n}` : ''}</button>`)}</div>
+    ${tab === 'pending' && (todo.length ? html`<div class="card notif-list">${todo.map((t, i) => { const [l, fn] = TODO_ACT(t); return html`<div key=${t.kind + (t.basketId || '') + i} class="notif-item">
+        <span class="ic ${t.priority === 0 ? 'crit' : ''}" aria-hidden="true">!</span>
+        <span class="grow"><span class="t">${t.text}</span><span class="s">${t.detail}</span></span>
+        <button class="btn small ${i ? '' : 'primary'}" onClick=${fn}>${l}</button></div>`; })}</div>`
+      : empty('Nothing pending', 'Orders waiting for your OK and baskets that need something show up here.'))}
+    ${tab === 'active' && (active.length ? html`<div class="card notif-list">${active.map(a => html`<${NotifRow} key=${a.id} a=${a} open=${!!open[a.id]} toggle=${toggle(a.id)}/>`)}</div>`
+      : empty('No notifications', "You'll see one when a stock's rating changes, new results come out, or an order is waiting for you."))}
+    ${tab === 'cleared' && (cleared.length ? html`<div class="card notif-list">${cleared.map((a, i) => html`<${NotifRow} key=${a.id + '-' + i} a=${a} cleared open=${!!open['c' + i]} toggle=${toggle('c' + i)}/>`)}</div>`
+      : empty('Nothing cleared yet', 'Notifications you delete are kept here, with any orders that were cancelled along with them.'))}
   </div>`;
 }
 
 function TopBar() {
   const S = store.S;
-  const [bell, setBell] = useState(false);
-  useEffect(() => {
-    if (!bell) return;
-    const off = e => { if (!e.target.closest?.('.notifmenu')) setBell(false); };
-    const key = e => { if (e.key === 'Escape') setBell(false); };
-    document.addEventListener('click', off); document.addEventListener('keydown', key);
-    return () => { document.removeEventListener('click', off); document.removeEventListener('keydown', key); };
-  }, [bell]);
   const [menu, setMenu] = useState(false);
   const [busy, setBusy] = useState(null);
   useEffect(() => {
@@ -96,9 +117,7 @@ function TopBar() {
         <span class="clock-k">Demo date</span><span class="num">${short(S.clock)}</span></button>
       <button class="clock-step ${busy === 'advance_day' ? 'busy' : ''}" disabled=${!!busy} title="Jump 1 day: the daily rule checks run" aria-label="Jump 1 day" onClick=${() => jump('advance_day')}>+1<span class="u-s">d</span><span class="u-l"> day</span></button>
       <button class="clock-step ${busy === 'advance_quarter' ? 'busy' : ''}" disabled=${!!busy} title="Jump 1 quarter: new quarterly results arrive" aria-label="Jump 1 quarter" onClick=${() => jump('advance_quarter')}>+1<span class="u-s">q</span><span class="u-l"> quarter</span></button></div>
-    <div class="topmenu notifmenu">
-      <button class="iconbtn" aria-haspopup="dialog" aria-expanded=${bell} aria-label=${S.unread ? `Notifications, ${S.unread} unread` : 'Notifications'} onClick=${() => setBell(!bell)}>${I.bell}${S.unread ? html`<span class="dot-badge">${S.unread}</span>` : null}</button>
-      ${bell && html`<${NotifPanel} onClose=${() => setBell(false)}/>`}</div>
+    <button class="iconbtn" aria-label=${S.unread ? `Notifications, ${S.unread} unread` : 'Notifications'} onClick=${() => go('notifications')}>${I.bell}${S.unread ? html`<span class="dot-badge">${S.unread}</span>` : null}</button>
     <div class="topmenu">
       <button class="iconbtn" aria-haspopup="menu" aria-expanded=${menu} aria-label="Settings, refresh, reset" onClick=${() => setMenu(!menu)}>${I.user}</button>
       ${menu && html`<div class="topmenu-pop" role="menu">
@@ -115,11 +134,11 @@ function App() {
   const S = store.S;
   if (!S) return html`<div class="shell"><main class="main"><div class="col" style="padding-top:24px"><div class="sk" style="height:44px"></div><div class="sk" style="height:180px;margin-top:18px"></div><div class="sk" style="height:180px;margin-top:12px"></div></div></main></div>`;
   const nav = NAV(S);
-  const active = route === 'basket' ? 'baskets' : route === 'stock' || route === 'explore' || route === 'activity' ? 'home' : route;
+  const active = route === 'basket' ? 'baskets' : route === 'stock' || route === 'explore' || route === 'activity' || route === 'notifications' ? 'home' : route;
   const page = {
     home: () => html`<${Home}/>`, explore: () => html`<${Explore}/>`, stock: () => html`<${Stock} key=${param} symbol=${param}/>`,
     baskets: () => html`<${Baskets}/>`, basket: () => html`<${Basket} key=${param} id=${param}/>`, orders: () => html`<${Orders}/>`,
-    alerts: () => html`<${Alerts}/>`, pricing: () => html`<${Pricing}/>`, account: () => html`<${Account}/>`, about: () => html`<${About}/>`, activity: () => html`<${Activity}/>`, rules: () => html`<${DefaultRules}/>`,
+    alerts: () => html`<${Alerts}/>`, pricing: () => html`<${Pricing}/>`, account: () => html`<${Account}/>`, about: () => html`<${About}/>`, activity: () => html`<${Activity}/>`, notifications: () => html`<${Notifications}/>`, rules: () => html`<${DefaultRules}/>`,
   }[route]();
   const t = store.ui.toast;
   return html`<div class="shell">

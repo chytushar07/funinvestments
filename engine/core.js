@@ -54,7 +54,7 @@ export function createState() {
     cash: 100000, startingCash: 100000,
     rules: defaultRuleSet(), universe: buildUniverse(),
     prices: { ...SEED_PRICES }, prevPrices: { ...SEED_PREV }, nifty: NIFTY_SEED, niftyPrev: NIFTY_PREV,
-    baskets: [], orders: [], alerts: [], flags: [], journal: [], decisions: [], events: [], activity: [],
+    baskets: [], orders: [], alerts: [], clearedAlerts: [], flags: [], journal: [], decisions: [], events: [], activity: [],
     filings: FILINGS.map(f => ({ ...f, applied: false })),
     notif: { push: false, email: false, critical: true },
     onboarded: false, claudeConnected: false, lastClaudeCall: null,
@@ -1022,12 +1022,14 @@ const OPS = {
     const al = st.alerts.find(x => x.id === a.alert_id);
     if (!al) throw new ApiError('not_found', 'No such alert');
     const cancelled = dropAlertActions(st, [al], actor);
+    archiveAlerts(st, [al], actor, cancelled);
     st.alerts = st.alerts.filter(x => x.id !== a.alert_id);
     return { dismissed: a.alert_id, text: al.text, cancelled };
   },
   clear_alerts(st, a, actor) {
     const gone = st.alerts.filter(x => !a.basket_id || x.basketId === a.basket_id);
     const cancelled = dropAlertActions(st, gone, actor);
+    archiveAlerts(st, gone, actor, cancelled);
     st.alerts = st.alerts.filter(x => !gone.includes(x));
     return { cleared: gone.length, cancelled };
   },
@@ -1156,7 +1158,7 @@ const OPS = {
     return {
       clock: st.clock, plan: st.plan, planInfo: PLANS[st.plan], prices: PRICES, billing: st.billing || null, user: st.user, cash: st.cash, startingCash: st.startingCash,
       nifty: st.nifty, niftyChange: r2(((st.nifty - st.niftyPrev) / st.niftyPrev) * 100),
-      baskets: st.baskets.map(b => basketView(st, b)), orders: st.orders.slice(0, 150), alerts: st.alerts.slice(0, 150),
+      baskets: st.baskets.map(b => basketView(st, b)), orders: st.orders.slice(0, 150), alerts: st.alerts.slice(0, 150), clearedAlerts: (st.clearedAlerts || []).slice(0, 100),
       unread: st.alerts.filter(a => !a.read).length, pending: st.orders.filter(o => o.status === 'pending').length,
       flags: st.flags.slice(0, 100), journal: st.journal.slice(0, 100), rules: st.rules, needs: dedupe(needs),
       universe: universeList(st, { sort: 'points' }),
@@ -1209,6 +1211,14 @@ const OPS = {
 // What the user should do next, most urgent first: orders with a sell the rules or news asked for,
 // then other orders, urgent alerts that have no order to confirm, baskets short of stocks,
 // baskets not invested yet, and last the news flags that only wait for results.
+// Deleted notifications are kept (newest first) so the Notifications page can show what was cleared and what went with it.
+function archiveAlerts(st, alerts, actor, cancelled) {
+  st.clearedAlerts ||= [];
+  const byId = Object.fromEntries(cancelled.map(c => [c.id, c]));
+  for (const al of alerts) st.clearedAlerts.unshift({ ...al, read: true, clearedAt: st.clock, clearedBy: actor,
+    cancelled: al.action?.kind === 'orders' ? al.action.ids.map(id => byId[id]).filter(Boolean) : [] });
+  if (st.clearedAlerts.length > 200) st.clearedAlerts.length = 200;
+}
 function dropAlertActions(st, alerts, actor) {
   const out = [];
   for (const al of alerts) {

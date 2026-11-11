@@ -626,9 +626,13 @@ test('alerts: deleting a notification also cancels its waiting orders; clear all
   assert.ok(!st.alerts.some(a => a.id === al.id));
   assert.ok(!ok(dispatch(st, 'get_activity', {}, 'you')).todo.some(t => t.kind === 'orders' && t.ids.some(id => ids.includes(id))));
   assert.match(st.activity[0].text, /Deleted notification .* cancelled/);
+  const kept = ok(dispatch(st, 'get_state', {}, 'you')).clearedAlerts[0];
+  assert.equal(kept.id, al.id); assert.equal(kept.cancelled.length, ids.length);
   // A plain alert deletes without touching orders
   const before = st.orders.filter(o => o.status === 'pending').length;
+  const left = st.alerts.length, archived = st.clearedAlerts.length;
   ok(dispatch(st, 'clear_alerts', {}, 'you'));
   assert.equal(st.alerts.length, 0);
+  assert.equal(st.clearedAlerts.length, archived + left);
   assert.ok(st.orders.filter(o => o.status === 'pending').length <= before);
 });
