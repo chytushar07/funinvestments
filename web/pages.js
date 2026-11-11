@@ -584,7 +584,7 @@ export function About() {
         <tbody>${PLAN_ROWS.map(([f, a, b]) => html`<tr key=${f}><td>${f}</td><td class=${S.plan === 'free' ? 'cur' : ''}>${cell(a)}</td><td class=${S.plan === 'pro' ? 'cur' : ''}>${cell(b)}</td></tr>`)}</tbody></table></div>
       <p class="faint" style="font-size:12px;margin:0">The plan switch is a demo: no payment is taken. Urgent alerts are never behind a paywall.</p></section>
     <section class="section"><div class="section-head"><h2>${I.spark} Connect Claude</h2><button class="btn small primary" onClick=${() => { go('account'); setTimeout(() => document.getElementById('connect-claude')?.scrollIntoView({ behavior: 'smooth' }), 150); }}>Connect</button></div>
-      <div class="howto">${[['1', 'Copy your link', 'In Settings → Connect Claude.'], ['2', 'Add it in Claude', 'Connectors → Add custom connector.'], ['3', 'Ask Claude', '"What\'s pending in FunInvestments?"'], ['4', 'Confirm here', 'Claude prepares; you confirm orders.']].map(([n, t, d]) => html`<div class="howstep" key=${n}><span class="n">${n}</span><b>${t}</b><span class="muted">${d}</span></div>`)}</div>
+      <div class="howto">${[['1', 'Open Claude Connectors', '+ → Add custom connector.'], ['2', 'Paste name and URL', 'From Settings → Connect Claude, then Add.'], ['3', 'Ask Claude', '"What\'s pending in FunInvestments?"'], ['4', 'Confirm here', 'Claude prepares; you confirm orders.']].map(([n, t, d]) => html`<div class="howstep" key=${n}><span class="n">${n}</span><b>${t}</b><span class="muted">${d}</span></div>`)}</div>
       <p class="muted" style="margin:0;font-size:13.5px">Nothing is lost when a chat ends: baskets, orders and everything Claude did stay saved here. Home shows your next step; <button class="linkbtn" style="font-size:13.5px" onClick=${() => go('activity')}>Activity</button> shows what Claude did.</p></section>
     <section class="section"><h2>Where things are</h2>
       <div class="card list" style="padding:2px 16px">${[['Home', 'Your next step, Claude activity, browse stocks, create a basket', 'home'], ['Activity', 'Your to-do list and everything Claude did', 'activity'], ['Baskets', 'All your baskets, practice cash, tracking baskets', 'baskets'], ['Orders', 'Orders waiting for you, and past orders', 'orders'], ['Alerts', 'What changed and why', 'alerts'], ['Settings', 'Connect Claude (connector URL and steps), notifications, demo clock', 'account']].map(([t, d, r]) => html`<button key=${t} class="li btnrow" onClick=${() => go(r)}><span class="grow"><span class="t">${t}</span><span class="s">${d}</span></span>${I.chev}</button>`)}</div></section>
@@ -596,7 +596,8 @@ export function About() {
 }
 
 // ---------- Settings → Connect Claude: 4 simple steps, one button each ----------
-const CLAUDE_CONNECTORS = 'https://claude.ai/settings/connectors';
+const CLAUDE_CONNECTORS = 'https://claude.ai/new#customize/connectors';
+const ONLINE_APP = 'https://funinvestments.green-sound-dc01.workers.dev/';
 const CLAUDE_NEW = 'https://claude.ai/new';
 const FIRST_ASK = "What's pending in FunInvestments?";
 
@@ -624,12 +625,20 @@ export function ConnectSteps({ compact }) {
     <div class="grow" style="min-width:0"><b>${title}</b>${body && html`<div class="muted" style="font-size:13px;margin-top:2px">${body}</div>`}</div>
     ${cta}</div>`;
   if (!hosted) return html`<div class="card stack" style="gap:10px">
-    <b>First, put FunInvestments online</b>
-    <span class="muted" style="font-size:13.5px">Claude can only reach the app once it has a web address. This copy runs only in your browser. Host it (README → "Host it"), open the hosted address, and your link appears here.</span></div>`;
+    <b>Open the online app to connect Claude</b>
+    <span class="muted" style="font-size:13.5px">This copy runs only in your browser, so Claude can't reach it. The online app has your connector link.</span>
+    <a class="btn primary" href=${ONLINE_APP} target="_blank" rel="noopener">Open online app</a></div>`;
+  const short = url.replace(S.user.apiKey, S.user.apiKey.slice(0, 6) + '…');
+  const field = (label, shown, value) => html`<div class="cfield"><span class="faint">${label}</span>
+    <div class="row" style="gap:8px"><div class="codebox" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${shown}</div>
+    <button class="btn small" onClick=${() => copy(value)}>Copy</button></div></div>`;
   return html`<div class="csteps">
-    ${step(1, 'Copy your link', compact ? null : 'Keep it private: it works like a password.', html`<button class="btn small primary" onClick=${() => copy(url)}>Copy link</button>`)}
-    ${step(2, 'Add it in Claude', html`Connectors → <b>Add custom connector</b> → name it FunInvestments → paste the link → Add.`, html`<a class="btn small" href=${CLAUDE_CONNECTORS} target="_blank" rel="noopener">Open Claude</a>`)}
-    ${step(3, 'Check it works', test?.state === 'ok' ? html`<span class="up">Working</span>` : test?.state === 'bad' ? html`<span class="down">Not working: ${test.msg}</span>` : test?.state === 'run' ? 'Checking…' : null,
+    ${step(1, 'Open Connectors in Claude', html`Click <b>+</b> → <b>Add custom connector</b>.`, html`<a class="btn small primary" href=${CLAUDE_CONNECTORS} target="_blank" rel="noopener">Open Claude</a>`)}
+    ${step(2, 'Fill in two boxes, then Add', html`<div class="stack" style="gap:8px;margin-top:8px">
+        ${field('Name', 'FunInvestments', 'FunInvestments')}
+        ${field('Remote MCP server URL', short, url)}
+        <span class="faint" style="font-size:12px">Leave Advanced settings empty. Keep the URL private: it works like a password.</span></div>`, null)}
+    ${step(3, 'Check it works', test?.state === 'ok' ? html`<span class="up">Working</span>` : test?.state === 'bad' ? html`<span class="down">Not working: ${test.msg}</span>` : test?.state === 'run' ? 'Checking…' : compact ? null : 'FunInvestments should be switched on in your Connectors list.',
       html`<button class="btn small" onClick=${runTest}>Test</button>`, test?.state === 'ok')}
     ${step(4, 'Ask Claude', html`Start a new chat and ask: <span class="codebox inline">${FIRST_ASK}</span>`, html`<button class="btn small" onClick=${() => { copy(FIRST_ASK); window.open?.(CLAUDE_NEW, '_blank', 'noopener'); }}>Copy & open</button>`, S.claudeConnected)}
   </div>`;

@@ -81,8 +81,9 @@ resets on restart. The free plan allows 100,000 requests a day, plenty for a pro
 Every push to `main` redeploys automatically.
 
 **2. Connect Claude**
-In the website: **Settings → Connect Claude**: copy the link → Open Claude → Add custom connector →
-paste → Test. Then start a chat: "What's pending in FunInvestments?"
+1. Open claude.ai → **Customize → Connectors** (claude.ai/new#customize/connectors) → **+** → **Add custom connector**.
+2. **Name:** `FunInvestments`. **Remote MCP server URL:** copy it from the website's **Settings → Connect Claude**. Click **Add**.
+3. Make sure FunInvestments is switched on, then start a chat: "What's pending in FunInvestments?"
 
 **Secret key.** The connector link contains a key. If you don't set one, the app makes one on first
 start and saves it. To choose your own: Worker → Settings → Variables and Secrets → add secret
