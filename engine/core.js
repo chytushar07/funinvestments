@@ -1273,8 +1273,8 @@ function todoListRaw(st) {
   // An urgent alert that came with an order is covered by that order (above) while it waits, and is settled once the order is confirmed or cancelled.
   const urgent = st.alerts.filter(a => a.critical && !a.read && a.action?.kind !== 'orders');
   if (urgent.length) out.push({ kind: 'alerts', priority: 2, text: `Read ${urgent.length} urgent alert${urgent.length > 1 ? 's' : ''}`, detail: urgent[0].text });
-  for (const b of st.baskets) if (b.kind === 'model' && b.symbols.length < b.limits.minStocks && !groups[b.id]) out.push({ kind: 'basket', priority: 3, basketId: b.id, text: `${b.name} needs ${b.limits.minStocks - b.symbols.length} more stock${b.limits.minStocks - b.symbols.length > 1 ? 's' : ''}`, detail: 'Add stocks or ask Claude to find some' });
-  for (const b of st.baskets) if (b.kind === 'model' && !invested(b) && !groups[b.id] && b.symbols.length >= b.limits.minStocks) out.push({ kind: 'invest', priority: 4, basketId: b.id, text: `Invest in ${b.name}`, detail: 'Not invested yet' });
+  for (const b of st.baskets) if (b.kind === 'model' && !b.deleteRequest && b.symbols.length < b.limits.minStocks && !groups[b.id]) out.push({ kind: 'basket', priority: 3, basketId: b.id, text: `${b.name} needs ${b.limits.minStocks - b.symbols.length} more stock${b.limits.minStocks - b.symbols.length > 1 ? 's' : ''}`, detail: 'Add stocks or ask Claude to find some' });
+  for (const b of st.baskets) if (b.kind === 'model' && !b.deleteRequest && !invested(b) && !groups[b.id] && b.symbols.length >= b.limits.minStocks) out.push({ kind: 'invest', priority: 4, basketId: b.id, text: `Invest in ${b.name}`, detail: 'Not invested yet' });
   const flags = st.flags.filter(f => f.status === 'open');
   if (flags.length) out.push({ kind: 'flags', priority: 5, text: `${flags.length} news flag${flags.length > 1 ? 's' : ''} waiting for results`, detail: flags.map(f => `${f.name}: ${f.metricLabel}`).join(' · ') });
   for (const t of out) t.key = t.kind + (t.basketId ? ':' + t.basketId : '');

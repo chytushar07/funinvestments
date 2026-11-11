@@ -654,3 +654,14 @@ test('pending: decline hides a reminder (restorable) and cancels waiting orders'
   assert.ok(ids.every(id => st.orders.find(o => o.id === id).status === 'cancelled'));
   assert.ok(!todo().some(t => t.kind === 'orders'));
 });
+
+test('pending: a waiting delete request hides invest / add-stock reminders for that basket', () => {
+  const st = createState(); st.plan = 'pro';
+  const b = ok(dispatch(st, 'create_basket', { name: 'AC', symbols: AC }, 'you')).basket;
+  const todo = () => ok(dispatch(st, 'get_activity', {}, 'you')).todo;
+  assert.ok(todo().some(t => t.kind === 'invest'));
+  ok(dispatch(st, 'request_delete_basket', { basket_id: b.id }, 'claude'));
+  assert.deepEqual(todo().map(t => t.kind), ['delete']);
+  ok(dispatch(st, 'keep_basket', { basket_id: b.id }, 'you'));
+  assert.ok(todo().some(t => t.kind === 'invest'));
+});
