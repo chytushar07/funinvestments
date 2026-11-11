@@ -153,6 +153,7 @@ Events are stored in `state.events` and printed to the console in the prototype.
 1. "Correct": an added/kept stock is correct if it beat Nifty 50 TRI over the next 12 months; a removal is correct if the stock lagged it.
 2. Basket defaults: min 6, max 12, 20% per stock, 40% per value-chain stage, 10% per Watch stock, rebalance at 5-point drift.
 3. Rules apply to all of a user's baskets in v1 (one rule set per user).
+   Hosted on Cloudflare, each visitor gets a private space (signed key, own Durable Object); the original owner key opens the original shared space.
 4. Anti-churn: a Pass stock drops to Watch only at 5+ points (buffer); daily metrics (traded value, volatility) need 2 consecutive breaching checks; a removed stock can't be refilled for 90 days.
 5. Event rules (Pro): surveillance listing and auditor exit = critical red; late results and rating downgrade = red (2 points).
 6. News flags: a "worse" flag on a critical metric drafts a sell marked "Based on news, not yet in results". The next filing confirms (status recomputes) or clears (draft cancelled).

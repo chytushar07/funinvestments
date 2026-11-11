@@ -47,6 +47,7 @@ export const GLOSSARY = {
   // ---- Claude ----
   claudestatus: { t: 'Connected or not', b: 'Connected means Claude has reached this app at least once through your link. "Last used" is the last time it did.', list: ['Not connected: finish the steps, then ask Claude one question.', 'Check status looks again right now.', 'If you remove FunInvestments inside Claude, this still shows the last time it was used.'] },
   claudesaved: { t: 'Claude and this app', b: 'Nothing is lost when a chat ends. Baskets, orders and everything Claude did stay saved here.', list: ['Home shows your next step.', 'Activity shows what Claude did.', 'Claude can prepare orders. Only you can confirm them, delete baskets or clear alerts.'] },
+  privatespace: { t: 'Your private space', b: 'Nobody else can see your baskets. This browser remembers your space. The link opens it on another device.', list: ['Anyone with the link can open and change your space, so share it with no one.', 'Clearing this browser\'s site data without saving the link starts a new, empty space.'] },
   claudeurl: { t: 'Your connector URL', b: 'This link lets Claude read and prepare things in your FunInvestments. It works like a password, so share it with no one.', list: ['Paste it into "Remote MCP server URL" in Claude.', 'Leave Advanced settings empty.'] },
   // ---- scorecard ----
   backtest: { t: 'Past test', b: 'We applied this basket\'s rules every June from 2018 to 2025 using past numbers, then checked how each stock did over the next 12 months. All data here is mock.' },
