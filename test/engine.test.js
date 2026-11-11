@@ -404,3 +404,53 @@ test('rules can be edited per basket, as defaults, or everywhere (and with no ba
   dispatch(st, 'reset_rules', { scope: 'defaults' }, 'you');
   assert.equal(st.rules.metrics.find(x => x.id === 'vol').enabled, true);
 });
+
+test('plan switch: Free caps a Pro basket without breaking it, turns off every-change alerts, Pro restores', () => {
+  const st = createState();
+  ok(dispatch(st, 'set_plan', { plan: 'pro' }, 'you'));
+  ok(dispatch(st, 'set_notif', { push: true }, 'you'));
+  const b = ok(dispatch(st, 'create_basket', { name: 'Big', symbols: [...AC, 'LGEINDIA', 'KRN', 'AVL'] }, 'you')).basket;
+  assert.ok(b.count > 8);
+  ok(dispatch(st, 'set_plan', { plan: 'free' }, 'you'));
+  const S = ok(dispatch(st, 'get_state', {}, 'you'));
+  assert.equal(S.notif.push, false, 'every-change alerts are Pro');
+  assert.equal(S.baskets[0].limits.maxStocks, 8); assert.equal(S.baskets[0].overPlanMax, true);
+  ok(dispatch(st, 'set_plan', { plan: 'pro' }, 'you'));
+  assert.equal(ok(dispatch(st, 'get_state', {}, 'you')).baskets[0].limits.maxStocks, 12, 'Pro gets its 12 back');
+  // A basket created on Free can grow past 8 after upgrading
+  const st2 = createState();
+  const b2 = ok(dispatch(st2, 'create_basket', { name: 'Small', symbols: AC }, 'you')).basket;
+  ok(dispatch(st2, 'set_plan', { plan: 'pro' }, 'you'));
+  for (const sym of ['LGEINDIA', 'KRN', 'AVL', 'SUBROS']) dispatch(st2, 'add_stock', { basket_id: b2.id, symbol: sym }, 'you');
+  assert.ok(ok(dispatch(st2, 'get_state', {}, 'you')).baskets[0].count > 8, 'past the Free cap of 8 on Pro');
+  assert.ok(b2.count <= 8);
+});
+
+test('invest: whole-share rounding never drafts more than the amount, and confirm never half-fills', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'All in', symbols: AC.slice(0, 6) }, 'you')).basket;
+  const d = ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 100000 }, 'you'));
+  const total = d.orders.reduce((t, o) => t + o.estValue * 1.001, 0);
+  assert.ok(total <= 100000 + 0.01, `drafted ${total}`);
+  ok(dispatch(st, 'confirm_order', { order_ids: d.orders.map(o => o.id) }, 'you'));
+  // Too much for the cash left: refused up front, nothing filled
+  const d2 = ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', symbol: 'SRF', qty: 1 }, 'you'));
+  ok(dispatch(st, 'update_order', { order_id: d2.orders[0].id, qty: 500 }, 'you'));
+  const r = dispatch(st, 'confirm_order', { order_ids: [d2.orders[0].id] }, 'you');
+  assert.equal(r.ok, false); assert.equal(r.error.code, 'insufficient');
+  assert.equal(st.orders.find(o => o.id === d2.orders[0].id).status, 'pending');
+});
+
+test('delete basket removes its orders, alerts and journal; remove_stock reports an automatic replacement', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'Gone', symbols: AC.slice(0, 6) }, 'you')).basket;
+  ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 20000 }, 'you'));
+  ok(dispatch(st, 'delete_basket', { basket_id: b.id }, 'you'));
+  assert.equal(st.orders.filter(o => o.basketId === b.id).length, 0);
+  assert.equal(ok(dispatch(st, 'get_state', {}, 'you')).todo.length, 0);
+  const b2 = ok(dispatch(st, 'create_basket', { name: 'Six', symbols: AC.slice(0, 6) }, 'you')).basket;
+  const r = ok(dispatch(st, 'remove_stock', { basket_id: b2.id, symbol: 'SRF' }, 'you'));
+  assert.ok(r.basket.count >= 6, 'uninvested basket refilled at once');
+  assert.equal(r.refilled.length, r.basket.count - (b2.count - 1));
+  assert.ok(r.refilled.length >= 1);
+});

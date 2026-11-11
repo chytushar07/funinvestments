@@ -18,11 +18,11 @@ export const TOOLS = [
       symbol: sym, name: { type: 'string' }, sector: { type: 'string' }, stage: { type: 'string', enum: STAGES },
       themes: { type: 'object', description: 'Theme share of business, %, e.g. {"ac": 40}', additionalProperties: { type: 'number' } }, price: { type: 'number' },
       metrics: { type: 'object', properties: Object.fromEntries(METRICS.map(m => [m, { type: 'number' }])) } } } },
-  { name: 'create_basket', group: 'Baskets', description: 'Create a basket from NSE symbols with its own rules. Stocks that fail the basket rules, would push a segment over its limit, or exceed the plan stock limit (8 Free, 12 Pro) are skipped and listed with the reason. If a tool returns pro_feature, tell the user the free_alternative. theme is inferred when all stocks share one. rules overrides the 13 default rules for this basket (thresholds are Pro). kind "tracking" imports real holdings for alerts only.',
+  { name: 'create_basket', group: 'Baskets', description: 'Create a basket from NSE symbols with its own rules. Stocks that fail the basket rules, would push a segment over its limit, or exceed the plan stock limit (8 Free, 12 Pro) are skipped and listed with the reason. If a tool returns pro_feature, tell the user the free_alternative. theme is inferred when all stocks share one. rules overrides the 13 default rules for this basket (any rule override needs Pro; on Free leave it out and the default rules apply). kind "tracking" imports real holdings for alerts only.',
     inputSchema: { type: 'object', required: ['name'], properties: {
       name: { type: 'string' }, description: { type: 'string' }, symbols: { type: 'array', items: { type: 'string' } },
       theme: { type: ['string', 'null'], enum: [...THEMES, null] }, min_theme: { type: 'number', description: 'Min theme share %, default 20' },
-      rules: { type: 'object', description: 'Per-rule overrides, e.g. {"loss": {"green": 0, "red": 0}}. Changing green/red thresholds needs Pro; enabled true/false works on Free.', properties: Object.fromEntries([...METRICS, ...EVENTS].map(m => [m, ruleOverride])) },
+      rules: { type: 'object', description: 'Per-rule overrides, e.g. {"loss": {"green": 0, "red": 0}}. Needs Pro (thresholds and on/off).', properties: Object.fromEntries([...METRICS, ...EVENTS].map(m => [m, ruleOverride])) },
       kind: { type: 'string', enum: ['model', 'tracking'], default: 'model' },
       holdings: { type: 'array', description: 'Tracking only', items: { type: 'object', properties: { symbol: { type: 'string' }, qty: { type: 'number' }, avg_price: { type: 'number' } } } } } } },
   { name: 'update_basket', group: 'Baskets', description: 'Rename a basket or change its description or theme.',

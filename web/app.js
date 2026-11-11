@@ -3,7 +3,7 @@
 import { html, render, useState, useEffect } from './vendor/preact-htm.js';
 import * as notify from './notify.js';
 import * as api from './client.js';
-import { store, refresh, act, go, toast, openSheet, confirmDialog } from './store.js';
+import { store, refresh, act, go, toast, openSheet, closeSheet, confirmDialog } from './store.js';
 import { I, Logo, short } from './lib.js';
 import { Home, Explore, Stock, Baskets, Basket, Orders, Alerts, Pricing, Account, About, Activity, PlanSwitch, DefaultRules } from './pages.js';
 import { Tour } from './tour.js';
@@ -21,7 +21,7 @@ function parseHash() {
 function useRoute() {
   const [r, setR] = useState(parseHash());
   useEffect(() => {
-    const on = () => { setR(parseHash()); window.scrollTo(0, 0); };
+    const on = () => { if (store.ui.sheet) closeSheet(); setR(parseHash()); window.scrollTo(0, 0); }; // Back/forward never leaves a sheet over another page
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);

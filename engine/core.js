@@ -393,11 +393,13 @@ export function basketView(st, b) {
     id: b.id, name: b.name, description: b.description || '', kind: b.kind, theme: b.theme, themeLabel: b.theme ? THEME_LABEL[b.theme] : null,
     source: b.source, editedBy: b.editedBy || null, createdAt: b.createdAt, updatedAt: b.updatedAt || b.createdAt,
     value: r2(value), cash: r2(b.cash), invested: r2(inv), realized: r2(b.realized || 0), isInvested: isInv, pnl, returnPct: ret, niftyPct: niftyRet, vsNifty: r2(ret - niftyRet),
-    count: b.symbols.length, limits: b.limits, rules: b.rules,
+    count: b.symbols.length, limits: { ...b.limits, maxStocks: Math.min(b.limits.maxStocks, plan(st).maxStocks) }, rules: b.rules,
+    overPlanMax: b.kind === 'model' && b.symbols.length > Math.min(b.limits.maxStocks, plan(st).maxStocks),
     counts: { pass: stocks.filter(s => s.status === 'pass').length, watch: stocks.filter(s => s.status === 'watch').length, remove: stocks.filter(s => s.status === 'remove').length },
     stageWeights: stageWeights(st, Object.fromEntries(stocks.map(s => [s.symbol, isInv ? s.weight : s.target]))),
     targetCash: tw.cash, stocks,
     belowMin: b.kind === 'model' && b.symbols.length < b.limits.minStocks,
+    refillShort: b.kind === 'model' && b.symbols.length < b.limits.minStocks ? refillPlan(st, b).short : 0,
     pendingOrders: st.orders.filter(o => o.basketId === b.id && o.status === 'pending').length,
     unread: st.alerts.filter(a => a.basketId === b.id && !a.read).length,
     drift: isInv ? drift(st, b).max : 0,
@@ -454,11 +456,10 @@ function applyRuleOverrides(st, rules, overrides, actor) {
 }
 
 function newBasket(st, { name, kind, theme, description, symbols, actor, rules, limits }) {
-  const P = plan(st);
   const b = {
     id: nid(st, 'b'), name, kind, theme: theme || null, description: description || '', source: actor, createdAt: st.clock, updatedAt: st.clock,
     symbols, holdings: {}, cash: 0, netInvested: 0, niftyAtInvest: null,
-    limits: { ...DEFAULT_LIMITS, ...(limits || {}), maxStocks: Math.min(limits?.maxStocks ?? DEFAULT_LIMITS.maxStocks, P.maxStocks) },
+    limits: { ...DEFAULT_LIMITS, ...(limits || {}) }, // maxStocks is the basket's own limit; the plan caps it where it is used
     rules: rules || cloneRules(st.rules), statusPrev: {}, strikes: {}, removedAt: {},
   };
   for (const s of symbols) b.statusPrev[s] = scoreIn(st, b, s).status;
@@ -489,7 +490,7 @@ const OPS = {
     const probe = newBasket(st, { name: 'probe', kind, theme, symbols: [], actor, rules, limits: a.min_theme != null ? { minTheme: Number(a.min_theme) } : null });
     st.seq--; // probe id not used
     const skipped = [], eligible = [];
-    const maxStocks = probe.limits.maxStocks;
+    const maxStocks = Math.min(probe.limits.maxStocks, plan(st).maxStocks);
     for (const sym of input) {
       const u = st.universe[sym];
       if (!u) { skipped.push({ symbol: sym, why: 'Not in our stock list · add it in Explore' }); continue; }
@@ -569,8 +570,10 @@ const OPS = {
       }
       st.cash = r2(st.cash + returned);
     }
-    for (const o of st.orders) if (o.basketId === b.id && o.status === 'pending') Object.assign(o, { status: 'cancelled', cancelReason: 'Basket deleted' });
+    // Everything that belonged to the basket goes with it: orders (pending and past), alerts and journal notes.
+    st.orders = st.orders.filter(o => o.basketId !== b.id);
     st.alerts = st.alerts.filter(x => x.basketId !== b.id);
+    st.journal = st.journal.filter(j => j.basketId !== b.id);
     st.baskets = st.baskets.filter(x => x.id !== b.id);
     track(st, 'basket_deleted', { kind: b.kind });
     return { deleted: b.id, name: b.name, returnedCash: b.kind === 'model' ? r2(returned) : 0, cash: st.cash };
@@ -628,8 +631,10 @@ const OPS = {
     removeFromBasket(st, b, sym, a.reason || 'Removed by you', actor);
     b.editedBy = actor; b.updatedAt = st.clock;
     for (const o of st.orders) if (o.basketId === b.id && o.symbol === sym && o.status === 'pending') Object.assign(o, { status: 'cancelled', cancelReason: 'Stock removed' });
+    const before = new Set(b.symbols);
     ensureRefill(st, b);
-    return { basket: basketView(st, b) };
+    const refilled = b.symbols.filter(x => !before.has(x)).map(x => st.universe[x]?.name || x);
+    return { basket: basketView(st, b), refilled };
   },
 
   set_holding(st, a, actor) {
@@ -722,7 +727,7 @@ const OPS = {
     if (!isPro(st)) throw proError('edit rules');
     if (a.scope === 'defaults' || (!a.basket_id && !a.scope && st.baskets.length !== 1)) { st.rules = defaultRuleSet(); return { scope: 'defaults', rules: st.rules }; }
     const b = getBasket(st, a.basket_id);
-    b.rules = cloneRules(st.rules); b.limits = { ...DEFAULT_LIMITS, maxStocks: Math.min(DEFAULT_LIMITS.maxStocks, plan(st).maxStocks) };
+    b.rules = cloneRules(st.rules); b.limits = { ...DEFAULT_LIMITS }; delete b.limitsBy;
     b.editedBy = actor; b.updatedAt = st.clock;
     checkBasket(st, b, 'rules');
     return { basket: basketView(st, b) };
@@ -752,7 +757,7 @@ const OPS = {
     if (next.minStocks < 1 || next.minStocks > next.maxStocks || next.maxStocks > 12) throw new ApiError('bad_limit', 'Stocks: 1 ≤ min ≤ max ≤ 12');
     for (const f of ['maxStockWeight', 'maxStageWeight', 'maxWatchWeight']) if (!(next[f] > 0 && next[f] <= 100)) throw new ApiError('bad_limit', 'Weights must be 1–100%');
     if (!(next.minTheme >= 0 && next.minTheme <= 100)) throw new ApiError('bad_limit', 'Theme share must be 0–100%');
-    b.limits = next; b.editedBy = actor; b.updatedAt = st.clock;
+    b.limits = next; b.limitsBy = actor; b.editedBy = actor; b.updatedAt = st.clock;
     checkBasket(st, b, 'rules');
     return { basket: basketView(st, b) };
   },
@@ -786,9 +791,12 @@ const OPS = {
       if (!(amount > 0)) throw new ApiError('bad_amount', 'Enter an amount');
       if (amount > st.cash + b.cash) throw new ApiError('insufficient', `Paper cash is ${fmtINR(st.cash + b.cash)}`);
       const tw = targetWeights(st, b);
+      let left = amount; // rounding to whole shares never spends more than the amount asked for
       for (const [sym, w] of Object.entries(tw.weights)) {
-        const qty = Math.round((amount * w) / 100 / st.prices[sym]);
+        let qty = Math.round((amount * w) / 100 / st.prices[sym]);
+        if (qty * st.prices[sym] * (1 + SLIPPAGE) > left) qty = Math.floor(left / (st.prices[sym] * (1 + SLIPPAGE)));
         if (qty < 1) continue;
+        left -= qty * st.prices[sym] * (1 + SLIPPAGE);
         out.push(makeOrder(st, { basketId: b.id, symbol: sym, side, qty, source: actor, tag: 'invest', group, reason: `Invest ${fmtINR(amount)} · ${w}% of basket` }));
       }
       if (!out.length) throw new ApiError('bad_amount', 'Amount too small for one share of each');
@@ -801,7 +809,8 @@ const OPS = {
       if (!(qty >= 1)) throw new ApiError('bad_qty', 'Quantity must be at least 1');
       if (side === 'sell' && qty > held) throw new ApiError('bad_qty', `You hold ${held}`);
       if (side === 'buy' && !b.symbols.includes(sym)) {
-        if (b.symbols.length >= b.limits.maxStocks) throw new ApiError('limit', `Max ${b.limits.maxStocks} stocks`);
+        const max = Math.min(b.limits.maxStocks, plan(st).maxStocks);
+        if (b.symbols.length >= max) throw isPro(st) ? new ApiError('limit', `Max ${max} stocks`) : proError(`more than ${max} stocks`);
         if (scoreIn(st, b, sym).status === 'remove') throw new ApiError('rule_block', `${st.universe[sym].name} is rated ✕ Sell in this basket`);
       }
       out.push(makeOrder(st, { basketId: b.id, symbol: sym, side, qty, source: actor, tag: 'manual', group, addOnFill: side === 'buy' && !b.symbols.includes(sym), removeAfter: side === 'sell' && qty === held && !!a.remove_after, reason: a.reason || (side === 'sell' ? 'Sell' : 'Buy') }));
@@ -823,8 +832,16 @@ const OPS = {
     if (actor !== 'you') throw new ApiError('person_only', 'Only a person can confirm orders, in the website.');
     const ids = a.order_ids || (a.order_id ? [a.order_id] : st.orders.filter(o => o.group === a.group && o.status === 'pending').map(o => o.id));
     const prov = provider(st);
+    // Check the money first, so a confirm never fills half the orders and then fails.
+    const need = {};
+    for (const id of ids) { const o = st.orders.find(x => x.id === id && x.status === 'pending'); if (o && o.side === 'buy') need[o.basketId] = (need[o.basketId] || 0) + o.qty * (st.prices[o.symbol] || 0) * (1 + SLIPPAGE); }
+    const sells = {};
+    for (const id of ids) { const o = st.orders.find(x => x.id === id && x.status === 'pending'); if (o && o.side === 'sell') sells[o.basketId] = (sells[o.basketId] || 0) + o.qty * (st.prices[o.symbol] || 0) * (1 - SLIPPAGE); }
+    const totalNeed = Object.entries(need).reduce((t, [bid, v]) => t + Math.max(0, v - (st.baskets.find(b => b.id === bid)?.cash || 0) - (sells[bid] || 0)), 0);
+    if (totalNeed > st.cash + 0.5) throw new ApiError('insufficient', `These buys need about ${fmtINR(totalNeed)} of practice cash; you have ${fmtINR(st.cash)}. Lower a quantity or cancel an order.`);
     const filled = [];
-    for (const id of ids) {
+    const sideOf = id => st.orders.find(x => x.id === id)?.side === 'sell' ? 0 : 1; // sells first: their cash pays for the buys
+    for (const id of [...ids].sort((x, y) => sideOf(x) - sideOf(y))) {
       const o = st.orders.find(x => x.id === id);
       if (!o || o.status !== 'pending') continue;
       const b = st.baskets.find(x => x.id === o.basketId);
@@ -1041,7 +1058,10 @@ const OPS = {
   },
   set_plan(st, a) {
     st.plan = a.plan === 'pro' ? 'pro' : 'free';
-    for (const b of st.baskets) b.limits.maxStocks = Math.min(12, PLANS[st.plan].maxStocks);
+    // Older saves capped a Free basket's own limit at 8; on Pro it gets the normal 12 unless the person set it.
+    if (st.plan === 'pro') for (const b of st.baskets) if (!b.limitsBy && b.limits.maxStocks < DEFAULT_LIMITS.maxStocks) b.limits.maxStocks = DEFAULT_LIMITS.maxStocks;
+    // "Every change" alerts are Pro: switching to Free turns them off (urgent alerts stay on).
+    if (st.plan === 'free') { st.notif.push = false; st.notif.email = false; }
     st.billing = st.plan === 'pro' ? (PRICES[a.billing] ? a.billing : 'yearly') : null;
     track(st, st.plan === 'pro' ? 'pro_started' : 'pro_ended', { billing: st.billing || 'none' });
     return { plan: st.plan };

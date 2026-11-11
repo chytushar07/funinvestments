@@ -1,5 +1,5 @@
 // Shared helpers and small components.
-import { html, useState, useEffect } from './vendor/preact-htm.js';
+import { html, useState, useEffect, useRef } from './vendor/preact-htm.js';
 
 export const inr = v => (v == null ? '—' : '₹' + Math.round(v).toLocaleString('en-IN'));
 export const inr2 = v => (v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -45,19 +45,47 @@ export function Sparkline({ pts }) {
     <path d="${d}L${x(pts.length - 1)},${H}L${x(0)},${H}Z" fill=${c} opacity=".1"/><path d=${d} fill="none" stroke=${c} stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
 }
 
+// − / + stepper. It keeps its own count so quick taps all add up, even while the page redraws
+// or the server is still saving the previous tap (it used to compute every tap from the last saved value).
 export function Stepper({ value, onChange, min = 0, max = 9999, step = 1, unit = '', label }) {
+  const [v, setV] = useState(value);
+  const sent = useRef([]); // values tapped but not yet seen back from the parent / server
+  useEffect(() => {
+    const i = sent.current.indexOf(value);
+    if (i >= 0) { sent.current = sent.current.slice(i + 1); if (sent.current.length) return; } // an older echo: keep showing the newest tap
+    else sent.current = [];
+    setV(value);
+  }, [value]);
+  const bump = d => setV(x => { const n = Math.min(max, Math.max(min, +(x + d).toFixed(4))); if (n !== x) { sent.current = [...sent.current, n]; onChange(n); } return n; });
   return html`<span class="stepper" role="group" aria-label=${label}>
-    <button type="button" aria-label="Less" disabled=${value <= min} onClick=${() => onChange(Math.max(min, value - step))}>−</button>
-    <span>${value}${unit}</span>
-    <button type="button" aria-label="More" disabled=${value >= max} onClick=${() => onChange(Math.min(max, value + step))}>+</button></span>`;
+    <button type="button" aria-label=${`${label || 'Value'}: less`} disabled=${v <= min} onClick=${() => bump(-step)}>−</button>
+    <span>${v}${unit}</span>
+    <button type="button" aria-label=${`${label || 'Value'}: more`} disabled=${v >= max} onClick=${() => bump(step)}>+</button></span>`;
 }
 
 // Switch shows the new position the moment it is tapped and keeps it while the change is saved.
 // (A redraw before the server answered used to flip it back for a moment, like a refresh.)
+// If the change is refused (e.g. a Pro feature, or no connection) it goes back to the saved position.
 export function Switch({ id, checked, onChange, label, disabled }) {
   const [on, setOn] = useState(checked);
-  useEffect(() => { setOn(checked); }, [checked]);
-  return html`<label class="switch"><input type="checkbox" id=${id} checked=${on} disabled=${disabled} aria-label=${label} onChange=${e => { setOn(e.target.checked); onChange(e.target.checked); }}/><span></span></label>`;
+  const saved = useRef(checked), busy = useRef(0);
+  saved.current = checked;
+  // While taps are still being saved, a redraw from an earlier tap must not flip it back.
+  useEffect(() => { if (!busy.current) setOn(checked); }, [checked]);
+  const tap = v => {
+    setOn(v); busy.current++;
+    const settle = () => { if (--busy.current === 0) setOn(saved.current); };
+    Promise.resolve(onChange(v)).then(settle, settle);
+  };
+  return html`<label class="switch"><input type="checkbox" id=${id} checked=${on} disabled=${disabled} aria-label=${label} onChange=${e => tap(e.target.checked)}/><span></span></label>`;
+}
+
+// A rule's limits in words, the same on every screen: "good ≤ 0.5× · bad > 1×".
+export function ruleLimits(r) {
+  const u = r.unit === '%' ? '%' : r.unit === '×' ? '×' : r.unit === '₹ cr' ? ' cr' : '';
+  if (r.id === 'loss') return `good ${r.green} · bad ≥ ${r.red + 1}`;
+  const hi = r.dir === 'higher';
+  return `good ${hi ? '≥' : '≤'} ${r.green}${u} · bad ${hi ? '<' : '>'} ${r.red}${u}`;
 }
 
 // Free plan: a small lock where a rule's switch would be.

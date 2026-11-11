@@ -1,6 +1,6 @@
 // Bottom sheets: every create / edit / delete flow lives here.
 import { html, useState, useEffect, useRef } from './vendor/preact-htm.js';
-import { store, act, read, go, openSheet, closeSheet, copy, toast, confirmDialog, refresh } from './store.js';
+import { store, act, read, go, goSheet, openSheet, closeSheet, copy, toast, confirmDialog, refresh } from './store.js';
 import { inr, inr2, pct, cls, short, shortName, STATUS, Pill, Src, Avatar, I, Stepper, Logo } from './lib.js';
 import { Info, InfoSheet } from './glossary.js';
 import { orderWhy } from './pages.js';
@@ -57,6 +57,7 @@ function NumStep({ id, v, set, step, clamp, label }) {
     <button type="button" aria-label=${`${label}: more`} onClick=${() => set(x => clamp(x + step))}>+</button></div>`;
 }
 
+const warnTxt = n => `${n} warning${n === 1 ? '' : 's'}`;
 const SHEETS = {
   info: InfoSheet,
   // ---------- create basket ----------
@@ -80,7 +81,7 @@ const SHEETS = {
       ${result.skipped.length > 0 && html`<div class="card list" style="padding:2px 16px">${result.skipped.map(x => html`<div class="li" key=${x.symbol}><span class="grow"><span class="t">${x.name || x.symbol} · skipped</span><span class="s">${x.why}</span></span></div>`)}</div>`}
       ${bt.mine ? html`<div class="tile"><span class="k">Past test of your ${bt.mine.stocks} stocks, ${bt.years} <${Info} k="grew"/></span><span class="v">₹100 → ₹${bt.mine.grew}</span><span class="faint" style="font-size:12.5px">kept by these rules each June · Nifty 50: ₹${bt.mine.nifty} · beat the Nifty in ${bt.mine.beatYears} of ${bt.mine.years} years</span></div>` : null}
       <span class="faint" style="font-size:12px;margin-top:-6px">Same rules on every stock we track in this theme: when they said Sell, they were right ${bt.removalsRight} of ${bt.removalsTotal} times (${pctRight}%).</span>
-      <div class="row" style="gap:8px">${short ? html`<button class="btn primary" style="flex:1" onClick=${() => { go('basket-' + result.basket.id); setTimeout(() => openSheet({ type: 'addstocks', id: result.basket.id }), 150); }}>Add ${short} more</button><button class="btn ghost" style="flex:1" onClick=${() => go('basket-' + result.basket.id)}>Open basket</button>`
+      <div class="row" style="gap:8px">${short ? html`<button class="btn primary" style="flex:1" onClick=${() => goSheet('basket-' + result.basket.id, { type: 'addstocks', id: result.basket.id })}>Add ${short} more</button><button class="btn ghost" style="flex:1" onClick=${() => go('basket-' + result.basket.id)}>Open basket</button>`
         : html`<button class="btn primary" style="flex:1" onClick=${() => go('basket-' + result.basket.id)}>Open basket</button><button class="btn ghost" style="flex:1" onClick=${() => openSheet({ type: 'invest', id: result.basket.id })}>Invest ₹</button>`}</div></div>`;
     }
     const list = S.universe.filter(x => !q || x.name.toLowerCase().includes(q.toLowerCase()) || x.symbol.toLowerCase().includes(q.toLowerCase()) || x.sector.toLowerCase().includes(q.toLowerCase()));
@@ -105,7 +106,7 @@ const SHEETS = {
         ${picked.length > 0 && html`<div class="picksum"><span><b>${picked.length} selected:</b> ${picked.map(x => shortName(x.name)).join(', ')}</span><button class="linkbtn" onClick=${() => picked.forEach(x => toggle(x.symbol))}>Clear</button></div>`}
         <input class="input" id="nb-q" placeholder="Search stocks or sector" value=${q} onInput=${e => setQ(e.target.value)} aria-label="Search stocks"/>
         <div class="card list pick" style="padding:2px 14px">${list.map(x => html`<button key=${x.symbol} class="li btnrow" aria-pressed=${pick.has(x.symbol)} onClick=${() => toggle(x.symbol)}>
-          <${Avatar} name=${x.name} stage=${x.stage}/><span class="grow"><span class="t">${x.name}</span><span class="s">${x.sector} · ${x.points} warnings · profitable ${x.profitableYears} of 5 yrs</span></span><${Pill} s=${x.status}/><span class="check">${pick.has(x.symbol) ? '✓' : ''}</span></button>`)}</div>
+          <${Avatar} name=${x.name} stage=${x.stage}/><span class="grow"><span class="t">${x.name}</span><span class="s">${x.sector} · ${warnTxt(x.points)} · profitable ${x.profitableYears} of 5 yrs</span></span><${Pill} s=${x.status}/><span class="check">${pick.has(x.symbol) ? '✓' : ''}</span></button>`)}</div>
         <span class="muted" style="font-size:12.5px">${pick.size} picked · max ${max}. Stocks that fail this basket's rules are skipped and listed.</span>`
       : html`<textarea class="input" id="nb-paste" placeholder="NTPC, POWERGRID, COALINDIA, PETRONET, GAIL, RELIANCE" value=${paste} onInput=${e => setPaste(e.target.value)} aria-label="Symbols"></textarea>`}
       <div class="sticky-cta"><button class="btn primary block" disabled=${!symbols.length} onClick=${create}>Create basket${symbols.length ? ` · ${symbols.length}` : ''}</button></div></div>`;
@@ -142,12 +143,19 @@ const SHEETS = {
     const [q, setQ] = useState('');
     if (!b) return null;
     const have = new Set(b.stocks.map(x => x.symbol));
-    const list = S.universe.filter(x => !have.has(x.symbol)).filter(x => !b.theme || x.themes?.[b.theme] != null || q).filter(x => !q || x.name.toLowerCase().includes(q.toLowerCase()) || x.symbol.toLowerCase().includes(q.toLowerCase()));
+    // Rate each stock the way this basket will (its theme's share rule), so a "Buy" here can be added.
+    const rate = x => (b.theme && x.byTheme?.[b.theme] ? { ...x, status: x.byTheme[b.theme].status, points: x.byTheme[b.theme].points, why: x.byTheme[b.theme].reason } : x);
+    const ord = { pass: 0, watch: 1, remove: 2 };
+    const list = S.universe.filter(x => !have.has(x.symbol)).filter(x => !b.theme || x.themes?.[b.theme] != null || q).filter(x => !q || x.name.toLowerCase().includes(q.toLowerCase()) || x.symbol.toLowerCase().includes(q.toLowerCase()))
+      .map(rate).sort((x, y) => ord[x.status] - ord[y.status] || x.points - y.points);
+    const max = Math.min(b.limits.maxStocks, S.planInfo.maxStocks), need = Math.max(0, b.limits.minStocks - b.count), isFull = b.count >= max;
     return html`<div class="stack" style="gap:14px"><h2>Add to ${b.name}</h2>
+      <span class="muted" style="font-size:13px;margin-top:-6px">${b.count} stock${b.count === 1 ? '' : 's'}${need ? html` · <b class="down">needs ${need} more</b>` : isFull ? ` · full (${max} max${S.plan === 'free' ? ' on Free' : ''})` : ` · room for ${max - b.count} more`}</span>
       <input class="input" id="as-q" placeholder=${b.theme ? `Search ${b.themeLabel} stocks (type to search all)` : 'Search stocks'} value=${q} onInput=${e => setQ(e.target.value)} aria-label="Search"/>
-      <div class="card list pick" style="padding:2px 14px">${list.map(x => html`<div class="li" key=${x.symbol}><${Avatar} name=${x.name} stage=${x.stage}/><span class="grow"><span class="t">${x.name}</span><span class="s">${x.sector} · ${x.points} warnings</span></span><${Pill} s=${x.status}/>
-        <button class="btn small" onClick=${() => act('add_stock', { basket_id: b.id, symbol: x.symbol }, { ok: `${shortName(x.name)} added` })}>Add</button></div>`)}</div>
-      <span class="faint" style="font-size:12px">${b.count} of ${b.limits.maxStocks} · status shown uses the default rules; this basket's own rules decide when you tap Add.</span></div>`;
+      <div class="card list pick" style="padding:2px 14px">${list.map(x => html`<div class="li" key=${x.symbol}><${Avatar} name=${x.name} stage=${x.stage}/><span class="grow"><span class="t">${x.name}</span><span class="s">${x.status === 'remove' && x.why ? x.why : `${x.sector} · ${warnTxt(x.points)}`}</span></span><${Pill} s=${x.status}/>
+        ${x.status === 'remove' ? html`<span class="faint" style="font-size:12px;width:44px;text-align:center">Can't add</span>` : html`<button class="btn small" disabled=${isFull} onClick=${() => act('add_stock', { basket_id: b.id, symbol: x.symbol }, { ok: `${shortName(x.name)} added` })}>Add</button>`}</div>`)}</div>
+      ${need === 0 && html`<button class="btn primary block" onClick=${closeSheet}>Done</button>`}
+      <span class="faint" style="font-size:12px">Ratings use your default rules${b.theme ? ` and the ${b.themeLabel} share rule` : ''}; this basket's own rules decide when you tap Add.</span></div>`;
   },
 
   // ---------- orders ----------
@@ -314,14 +322,16 @@ const SHEETS = {
       confirm: 'Delete basket', danger: true,
       onConfirm: async () => { const r = await act('delete_basket', { basket_id: b.id }, { ok: d => `Deleted${d.returnedCash ? ` · ${inr(d.returnedCash)} back to cash` : ''}` }); if (r?.ok) go('baskets'); },
     });
-    const dup = async () => { const r = await act('duplicate_basket', { basket_id: b.id }, { ok: 'Duplicated' }); if (r?.ok) go('basket-' + r.data.basket.id); };
+    const S = store.S, pro = S.plan === 'pro';
+    const full = !pro && S.baskets.filter(x => x.kind === b.kind).length >= (b.kind === 'model' ? S.planInfo.maxBaskets : S.planInfo.maxTracking);
+    const dup = async () => { if (full) { toast(`Free plan: 1 ${b.kind === 'model' ? '' : 'tracking '}basket. Pro has unlimited.`, { action: 'See plans', go: 'pricing' }); return; } const r = await act('duplicate_basket', { basket_id: b.id }, { ok: d => `Duplicated as ${d.basket.name}` }); if (r?.ok) go('basket-' + r.data.basket.id); };
     return html`<div class="stack" style="gap:6px"><h2 style="margin-bottom:6px">${b.name}</h2>
       ${b.kind === 'model' && html`<button class="menuitem" onClick=${() => { closeSheet(); setTimeout(() => window.dispatchEvent(new CustomEvent('fi-tab', { detail: { id: b.id, tab: 'rules' } })), 0); }}>⚙ Edit rules</button>`}
       <button class="menuitem" onClick=${() => openSheet({ type: 'editbasket', id: b.id })}>Edit name, note and theme</button>
       ${b.kind === 'model' && html`<button class="menuitem" onClick=${() => openSheet({ type: 'invest', id: b.id })}>Invest ₹</button>`}
       ${b.kind === 'model' && b.isInvested && html`<button class="menuitem" onClick=${() => exitBasket(b)}>Exit basket · sell everything</button>`}
-      <button class="menuitem" onClick=${dup}>Duplicate</button>
-      <button class="menuitem" onClick=${() => confirmDialog({ title: 'Reset rules to default?', body: 'Thresholds, switches and limits go back to the defaults for this basket.', confirm: 'Reset', onConfirm: () => act('reset_rules', { basket_id: b.id }, { ok: 'Rules reset' }) })}>Reset rules</button>
+      <button class="menuitem" onClick=${dup}>Duplicate${full ? html` <span class="faint" style="font-size:12px">🔒 Pro</span>` : ''}</button>
+      ${pro && html`<button class="menuitem" onClick=${() => confirmDialog({ title: 'Reset rules to default?', body: 'Thresholds, switches and limits go back to your default rules for this basket.', confirm: 'Reset', onConfirm: () => act('reset_rules', { basket_id: b.id }, { ok: 'Rules reset' }) })}>Reset rules</button>`}
       <button class="menuitem danger" onClick=${del}>Delete basket</button></div>`;
   },
 

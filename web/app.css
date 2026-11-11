@@ -499,8 +499,14 @@ a.btn.primary { color: var(--brand-ink); }
 .picksum b { color: var(--fg); }
 .picksum .linkbtn { flex: none; font-size: 13px; padding: 0; }
 
-/* 'Explore app' tab: stands out so people open it */
+/* 'Explore app' tab: a featured tab (coral compass), never a badge or dot. Active tabs get a soft pill behind the icon. */
 .bottomnav button.explorebtn, .navlink.explorebtn { color: var(--brand); }
-.bottomnav button.explorebtn svg { background: var(--brand-soft); border-radius: 999px; padding: 3px; width: 30px; height: 30px; box-shadow: 0 0 0 1px color-mix(in oklab, var(--brand) 45%, transparent); }
 .bottomnav button.explorebtn { font-size: 11px; white-space: nowrap; }
-.navlink.explorebtn { background: var(--brand-soft); }
+.bottomnav button svg { padding: 2px 14px; width: 52px; height: 28px; border-radius: 999px; box-sizing: border-box; transition: background .15s; }
+.bottomnav button.on svg { background: var(--brand-soft); }
+.navlink.explorebtn:not(.on) { color: var(--brand); }
+/* Explore app: one clear tour call to action */
+.tourcta { margin-top: 12px; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-color: color-mix(in oklab, var(--brand) 55%, var(--line)); background: linear-gradient(135deg, var(--brand-soft), transparent 75%), var(--card); }
+.tourcta b { display: block; font-size: 15px; }
+.tourcta .muted { font-size: 13px; margin-top: 2px; }
+.tourcta .btn { flex: none; }

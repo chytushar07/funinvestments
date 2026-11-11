@@ -23,12 +23,16 @@ export async function refresh() {
 // travelling is queued, not dropped (dropping it made switches snap back on slow phone networks).
 // The same action with the same arguments is never sent twice at once (no double orders).
 let chain = Promise.resolve();
-const inFlight = new Set();
+// A double tap (the same action and arguments as the last one still waiting) shares that request's answer
+// instead of sending it twice (no double orders). Off → on → off still sends all three.
+let last = null;
 export function act(op, args = {}, opts = {}) {
   const key = op + JSON.stringify(args);
-  if (inFlight.has(key)) return Promise.resolve(null);
-  inFlight.add(key);
-  const run = chain.then(() => runAct(op, args, opts)).finally(() => inFlight.delete(key));
+  if (last && last.key === key && !last.done) return last.run;
+  const run = chain.then(() => runAct(op, args, opts));
+  const mine = { key, run, done: false };
+  last = mine;
+  run.finally(() => { mine.done = true; });
   chain = run.catch(() => {});
   return run;
 }
@@ -58,6 +62,13 @@ export function toast(text, opts = {}) {
 export function openSheet(sheet) { store.ui = { ...store.ui, sheet }; emit(); }
 export function closeSheet() { store.ui = { ...store.ui, sheet: null }; emit(); }
 export const go = hash => { if (store.ui.sheet) closeSheet(); if (location.hash === '#' + hash) emit(); else location.hash = hash; };
+
+// Go to a page, then open a sheet on it (after the page change, which closes any open sheet).
+export function goSheet(hash, sheet) {
+  if (location.hash === '#' + hash) { openSheet(sheet); return; }
+  window.addEventListener('hashchange', () => setTimeout(() => openSheet(sheet), 0), { once: true });
+  go(hash);
+}
 
 export async function copy(text) {
   try { await navigator.clipboard.writeText(text); toast('Copied'); }

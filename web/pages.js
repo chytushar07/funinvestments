@@ -2,7 +2,7 @@
 import { html, useState, useEffect, useRef } from './vendor/preact-htm.js';
 import { store, act, read, go, openSheet, copy, toast, confirmDialog } from './store.js';
 import * as api from './client.js';
-import { inr, inr2, pct, cls, short, dateLabel, shortName, STATUS, Pill, Src, Avatar, Mock, Chg, I, Sparkline, Stepper, Switch, ProLock, Empty } from './lib.js';
+import { inr, inr2, pct, cls, short, dateLabel, shortName, STATUS, Pill, Src, Avatar, Mock, Chg, I, Sparkline, Stepper, Switch, ProLock, Empty, ruleLimits } from './lib.js';
 import { Info } from './glossary.js';
 import { exitBasket } from './sheets.js';
 import { startTour, tourSeen } from './tour.js';
@@ -340,8 +340,8 @@ function BasketOverview({ b, setTab }) {
       <div class="tile"><span class="k">${b.kind === 'tracking' ? 'Worth now' : 'Cash in basket'}</span><span class="v">${inr(b.kind === 'tracking' ? b.value : b.cash)}</span></div>
       <div class="tile"><span class="k">Stocks</span><span class="v">${b.count}<span class="muted" style="font-size:14px"> / ${b.limits.minStocks}–${b.limits.maxStocks}</span></span></div>
       <div class="tile"><span class="k">Off target <${Info} k="offtarget"/></span><span class="v">${b.isInvested && b.kind === 'model' ? b.drift.toFixed(1) + ' points' : '—'}</span></div></div>
-    ${b.belowMin && !refill.length && html`<div class="card stack" style="gap:8px"><b>Needs ${b.limits.minStocks - b.count} more stock${b.limits.minStocks - b.count > 1 ? 's' : ''} <${Info} k="replacement"/></b><span class="muted" style="font-size:13px">No other stock passes this basket's rules and limits right now.</span>
-      <div class="row wrap"><button class="btn small" onClick=${() => go('explore')}>Find stocks</button><button class="btn small ghost" onClick=${() => copy(`Find more ${b.themeLabel || ''} stocks for my "${b.name}" basket in FunInvestments and add them with add_candidate.`)}>Copy prompt for Claude</button></div></div>`}
+    ${b.belowMin && !refill.length && html`<div class="card stack" style="gap:8px"><b>Needs ${b.limits.minStocks - b.count} more stock${b.limits.minStocks - b.count > 1 ? 's' : ''} <${Info} k="replacement"/></b><span class="muted" style="font-size:13px">${b.refillShort ? 'No other stock passes this basket\'s rules and limits right now. Add your own, or ask Claude to find some.' : 'A basket needs at least ' + b.limits.minStocks + ' stocks so no single stock gets too big. Add them yourself, or ask Claude.'}</span>
+      <div class="row wrap"><button class="btn small primary" onClick=${() => openSheet({ type: 'addstocks', id: b.id })}>Add stocks</button><button class="btn small ghost" onClick=${() => copy(`Find more ${b.themeLabel || ''} stocks for my "${b.name}" basket in FunInvestments and add them with add_candidate.`)}>Copy prompt for Claude</button></div></div>`}
     ${cta}
     ${b.kind === 'model' && b.isInvested && html`<div class="row" style="gap:8px"><button class="btn ghost" style="flex:1" onClick=${() => exitBasket(b)}>Exit basket · sell everything</button><${Info} k="exit"/></div>`}
     ${journal.length > 0 && html`<section class="section"><h2>Decision journal <${Info} k="keepanyway"/></h2><div class="card list" style="padding:2px 16px">${journal.map(j => html`<div class="li" key=${j.id}><span class="grow"><span class="t">${j.name} · ${j.action}</span><span class="s">${j.reason || 'No reason'} · ${short(j.date)}</span></span>
@@ -357,7 +357,7 @@ function BasketStocks({ b }) {
   const remove = s => {
     if (b.kind === 'model' && s.qty > 0) {
       confirmDialog({ title: `Sell and remove ${shortName(s.name)}?`, body: `You hold ${s.qty} shares. A sell is drafted; the stock leaves the basket once you confirm it.`, confirm: 'Draft sell', onConfirm: async () => { const r = await act('remove_stock', { basket_id: b.id, symbol: s.symbol, sell: true }, { quiet: true }); if (r?.ok) { await import('./store.js').then(m => m.refresh()); openSheet({ type: 'review', ids: r.data.orders.map(o => o.id) }); } } });
-    } else confirmDialog({ title: `Remove ${shortName(s.name)}?`, body: b.kind === 'tracking' ? 'Its holding row is deleted from this tracking basket.' : 'It leaves this basket. If that takes the basket below its minimum, the app suggests a replacement.', confirm: 'Remove', danger: true, onConfirm: () => act('remove_stock', { basket_id: b.id, symbol: s.symbol }, { ok: 'Removed' }) });
+    } else confirmDialog({ title: `Remove ${shortName(s.name)}?`, body: b.kind === 'tracking' ? 'Its holding row is deleted from this tracking basket.' : 'It leaves this basket. If that takes the basket below its minimum, the app suggests a replacement.', confirm: 'Remove', danger: true, onConfirm: () => act('remove_stock', { basket_id: b.id, symbol: s.symbol }, { ok: d => d.refilled?.length ? `Removed · ${d.refilled.map(shortName).join(', ')} added to keep ${b.limits.minStocks} stocks` : 'Removed' }) });
   };
   if (b.kind === 'tracking') {
     return html`<div class="stack" style="margin-top:16px">
@@ -367,7 +367,7 @@ function BasketStocks({ b }) {
       <button class="btn block" onClick=${() => openSheet({ type: 'holding', id: b.id })}>+ Add holding</button></div>`;
   }
   return html`<div style="margin-top:16px">
-    <div class="row between"><span class="muted" style="font-size:13px">${b.count} of ${b.limits.maxStocks} max</span><div class="row" style="gap:8px"><button class="btn small ${edit ? 'primary' : 'ghost'}" onClick=${() => setEdit(!edit)}>${edit ? 'Done' : 'Edit'}</button><button class="btn small ghost" onClick=${() => openSheet({ type: 'addstocks', id: b.id })}>+ Add</button></div></div>
+    <div class="row between"><span class="muted" style="font-size:13px">${b.overPlanMax ? html`${b.count} stocks · <b class="down">over the Free limit of ${b.limits.maxStocks}</b>` : `${b.count} of ${b.limits.maxStocks} max`}</span><div class="row" style="gap:8px"><button class="btn small ${edit ? 'primary' : 'ghost'}" onClick=${() => setEdit(!edit)}>${edit ? 'Done' : 'Edit'}</button><button class="btn small ghost" onClick=${() => openSheet({ type: 'addstocks', id: b.id })}>+ Add</button></div></div>
     <div class="grid2" style="margin-top:12px">
       ${list.map(s => html`<div class="cardwrap" key=${s.symbol}><${StockCard} s=${s} b=${b}/>${edit && html`<button class="removex" aria-label="Remove ${s.name}" onClick=${() => remove(s)}>${I.x}</button>`}</div>`)}
       ${!edit && !all && b.stocks.length > 7 && html`<button class="scard more" onClick=${() => setAll(true)}>See ${b.stocks.length - 7} more</button>`}
@@ -376,13 +376,6 @@ function BasketStocks({ b }) {
 
 
 const lockTap = () => toast('Editing rules is a Pro feature', { action: 'See plans', go: 'pricing' });
-// (old big lock card kept for reference, no longer shown)
-function RulesLock() {
-  return html`<div class="card lockcard"><b>🔒 Rules are read-only on Free</b>
-    <span class="muted">Every basket uses the 13 default rules. Pro lets you switch rules on or off, set your own limits, and lets Claude edit them for you.</span>
-    <div class="row" style="gap:8px;margin-top:4px"><button class="btn small primary" onClick=${() => go('home')}>Try Pro (demo)</button><button class="btn small ghost" onClick=${goPlans}>See plans</button></div></div>`;
-}
-
 function BasketRules({ b }) {
   const S = store.S;
   const pro = S.plan === 'pro';
@@ -392,26 +385,25 @@ function BasketRules({ b }) {
   const steps = [['minStocks', 'min_stocks', 'Fewest stocks', 1, 1, 12, ''], ['maxStocks', 'max_stocks', 'Most stocks', 1, 1, 12, ''], ['maxStockWeight', 'max_stock_weight', 'Max in one stock', 5, 5, 100, '%'], ['maxStageWeight', 'max_stage_weight', 'Max in one segment', 5, 5, 100, '%'], ['maxWatchWeight', 'max_watch_weight', 'Max in a Hold stock', 5, 5, 100, '%'], ['driftTrigger', 'drift_trigger', 'Rebalance when off by', 1, 1, 30, ' pts'], ['minTheme', 'min_theme', 'Min theme share', 5, 0, 100, '%']];
   const dirty = lim && Object.keys(L).some(k => lim[k] !== L[k]);
   return html`<div class="stack" style="margin-top:14px">
-    ${pro ? html`<div class="card rulehelp"><b>Edit this basket's rules</b><span class="muted">Tap a rule to change its limits · use the switch to turn it off · basket limits are at the bottom. Changes apply to this basket only, and Claude can make them too. <button class="linkbtn" style="font-size:13px;padding:0" onClick=${() => go('rules')}>Default rules for new baskets →</button></span></div>` : html`<div class="row between proline"><span>🔒 Rules are read-only on Free · every basket uses the 13 defaults</span><button class="linkbtn" onClick=${goPlans}>Pro ›</button></div>`}
-    <div class="row between"><span class="eyebrow">13 safety rules · this basket only <${Info} k="warnings"/></span>${pro ? html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Reset rules to default?', body: 'Thresholds, switches and limits go back to the defaults for this basket.', confirm: 'Reset', onConfirm: () => act('reset_rules', { basket_id: b.id }, { ok: 'Rules reset' }) })}>Reset</button>` : html`<button class="linkbtn" onClick=${() => go('pricing')}>Edit with Pro</button>`}</div>
+    ${pro ? html`<div class="card rulehelp"><b>Edit this basket's rules</b><span class="muted">Tap a rule to change its limits · use the switch to turn it off · basket limits are at the bottom. Changes apply to this basket only, and Claude can make them too. <button class="linkbtn" style="font-size:13px;padding:0" onClick=${() => go('rules')}>Default rules for new baskets →</button></span></div>` : html`<div class="row between proline"><span>🔒 Editing rules is a Pro feature</span><button class="linkbtn" onClick=${goPlans}>See plans</button></div>`}
+    <div class="row between"><span class="eyebrow">13 safety rules · this basket only <${Info} k="warnings"/></span>${pro ? html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Reset rules to default?', body: 'Thresholds, switches and limits go back to your default rules for this basket.', confirm: 'Reset', onConfirm: () => act('reset_rules', { basket_id: b.id }, { ok: 'Rules reset' }) })}>Reset</button>` : html`<button class="linkbtn" onClick=${() => go('rules')}>Default rules</button>`}</div>
     <div class="card list" style="padding:2px 16px">${b.rules.metrics.map(r => {
       const red = b.stocks.filter(s => s.reds.includes(r.id)).length, amber = b.stocks.filter(s => s.ambers.includes(r.id)).length;
       const dot = !r.enabled ? 'off' : red ? 'red' : amber ? 'amber' : 'green';
-      const thr = r.id === 'loss' ? `${r.green} · > ${r.red}` : `${r.dir === 'higher' ? '≥' : '≤'} ${r.green} · ${r.dir === 'higher' ? '<' : '>'} ${r.red}`;
       return html`<div class="li" key=${r.id}>
         <button class="grow row ruleopen" onClick=${() => openSheet({ type: 'rule', id: b.id, rule: r.id })}>
           <span class="dot ${dot}" aria-label=${dot}></span>
           <span class="grow" style="min-width:0"><span class="t">${r.label}${r.critical ? html` <span class="star" title="Must-pass rule">★</span>` : ''}</span>
-          <span class="s"><span class="num">good ${thr.replace(' · ', ' · bad ')}${r.unit === '%' ? '%' : r.unit === '×' ? '×' : ''}</span>${red || amber ? ` · ${[red && `${red} red`, amber && `${amber} amber`].filter(Boolean).join(', ')}` : ''}${r.source === 'claude' ? ' · By Claude' : r.source === 'you' ? ' · By you' : ''}</span></span></button>
+          <span class="s"><span class="num">${ruleLimits(r)}${r.enabled ? '' : ' · off'}</span>${red || amber ? ` · ${[red && `${red} red`, amber && `${amber} amber`].filter(Boolean).join(', ')}` : ''}${r.source === 'claude' ? ' · By Claude' : r.source === 'you' ? ' · By you' : ''}</span></span></button>
         <${Info} k=${r.id}/>
         ${pro ? html`<${Switch} id=${`rt-${b.id}-${r.id}`} checked=${r.enabled} label="${r.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: r.id, enabled: v }, { ok: v ? `${r.label} on` : `${r.label} off` })}/>` : html`<${ProLock} label=${r.label} onTap=${lockTap}/>`}</div>`;
     })}</div>
     <div class="faint" style="font-size:12px">★ Must-pass: one red means Sell <${Info} k="mustpass"/></div>
-    ${b.kind === 'model' && html`<div class="row between" style="margin-top:8px"><span class="eyebrow">Basket limits <${Info} k="limits"/></span>${pro ? null : html`<span class="lock">Pro</span>`}</div>
+    ${b.kind === 'model' && html`<div class="row between" style="margin-top:8px"><span class="eyebrow">Basket limits <${Info} k="limits"/></span>${pro ? null : html`<span class="faint" style="font-size:12px">🔒 read-only</span>`}</div>
       <div class="card list" style="padding:2px 16px">${steps.map(([k, , label, step, min, max, unit]) => html`<div class="li" key=${k}><span class="grow t">${label}${k === 'minTheme' && b.themeLabel ? html` <span class="faint" style="font-weight:600">(${b.themeLabel})</span>` : ''}</span>
-        <${Stepper} label=${label} value=${cur[k]} min=${min} max=${max} step=${step} unit=${unit} onChange=${v => { if (!pro) { toast('Pro feature: basket limits', { action: 'See plans', go: 'pricing' }); return; } setLim({ ...cur, [k]: v }); }}/></div>`)}</div>
+        ${pro ? html`<${Stepper} label=${label} value=${cur[k]} min=${min} max=${k === 'maxStocks' ? Math.min(max, store.S.planInfo.maxStocks) : max} step=${step} unit=${unit} onChange=${v => setLim(l => ({ ...(l || L), [k]: v }))}/>` : html`<b class="num">${cur[k]}${unit}</b>`}</div>`)}</div>
       ${dirty && html`<div class="row" style="gap:8px"><button class="btn primary" style="flex:1" onClick=${async () => { const args = { basket_id: b.id }; for (const [k, a] of steps) args[a] = lim[k]; const r = await act('set_basket_rule', args, { ok: 'Limits saved' }); if (r?.ok) setLim(null); }}>Save limits</button><button class="btn ghost" onClick=${() => setLim(null)}>Undo</button></div>`}`}
-    <div class="row between" style="margin-top:8px"><span class="eyebrow">Company events</span>${pro ? null : html`<span class="lock">Pro</span>`}</div>
+    <div class="row between" style="margin-top:8px"><span class="eyebrow">Company events</span>${pro ? null : html`<span class="faint" style="font-size:12px">🔒 read-only</span>`}</div>
     <div class="card list" style="padding:2px 16px">${b.rules.events.map(e => html`<div class="li" key=${e.id}><span class="grow"><span class="t">${e.label}${e.critical ? html` <span class="star">★</span>` : ''}</span></span><${Info} k=${e.id}/>
       ${pro ? html`<${Switch} id=${`ev-${b.id}-${e.id}`} checked=${e.enabled} label="${e.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: e.id, enabled: v }, { ok: v ? 'On' : 'Off' })}/>` : html`<${ProLock} label=${e.label} onTap=${lockTap}/>`}</div>`)}</div>
   </div>`;
@@ -540,18 +532,16 @@ export function Pricing() {
 export function DefaultRules() {
   const S = store.S, pro = S.plan === 'pro';
   const R = S.rules; const n = S.baskets.length;
-  const changed = R.metrics.filter(r => r.source && r.source !== 'default').length + R.events.filter(r => r.enabled).length;
-  const thr = r => (r.id === 'loss' ? `good ${r.green} · bad > ${r.red}` : `good ${r.dir === 'higher' ? '≥' : '≤'} ${r.green} · bad ${r.dir === 'higher' ? '<' : '>'} ${r.red}`) + (r.unit === '%' ? '%' : r.unit === '×' ? '×' : '');
   return html`<div>
     <div class="row" style="margin-top:4px"><button class="iconbtn" onClick=${() => history.back()} aria-label="Back">${I.back}</button><h1>Default rules</h1></div>
     ${pro ? html`<div class="card rulehelp" style="margin-top:12px"><b>Your rules for every new basket</b>
-      <span class="muted">These 13 checks rate every stock on Home and Explore, and each new basket starts with them. A basket can then have its own: open it and tap <b>⚙ Edit rules</b>. Tap a rule to change its limits; the switch turns it off.</span></div>` : html`<div class="row between proline" style="margin-top:12px"><span>🔒 Read-only on Free · these 13 rules apply to every basket</span><button class="linkbtn" onClick=${goPlans}>Pro ›</button></div>`}
+      <span class="muted">These 13 checks rate every stock on Home and Explore, and each new basket starts with them. A basket can then have its own: open it and tap <b>⚙ Edit rules</b>. Tap a rule to change its limits; the switch turns it off.</span></div>` : html`<div class="row between proline" style="margin-top:12px"><span>🔒 Editing rules is a Pro feature</span><button class="linkbtn" onClick=${goPlans}>See plans</button></div>`}
     <section class="section"><div class="section-head"><span class="eyebrow">13 safety rules · defaults <${Info} k="warnings"/></span>
       ${pro && html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Reset default rules?', body: 'The 13 rules go back to the original limits and switches. Your baskets keep their own rules.', confirm: 'Reset', onConfirm: () => act('reset_rules', { scope: 'defaults' }, { ok: 'Default rules reset' }) })}>Reset</button>`}</div>
       <div class="card list" style="padding:2px 16px">${R.metrics.map(r => html`<div class="li" key=${r.id}>
         <button class="grow row ruleopen" onClick=${() => openSheet({ type: 'rule', scope: 'defaults', rule: r.id })}>
           <span class="dot ${r.enabled ? 'green' : 'off'}"></span>
-          <span class="grow" style="min-width:0"><span class="t">${r.label}${r.critical ? html` <span class="star" title="Must-pass rule">★</span>` : ''}</span><span class="s"><span class="num">${thr(r)}</span>${r.source === 'claude' ? ' · By Claude' : r.source === 'you' ? ' · Edited' : ''}</span></span></button>
+          <span class="grow" style="min-width:0"><span class="t">${r.label}${r.critical ? html` <span class="star" title="Must-pass rule">★</span>` : ''}</span><span class="s"><span class="num">${ruleLimits(r)}${r.enabled ? '' : ' · off'}</span>${r.source === 'claude' ? ' · By Claude' : r.source === 'you' ? ' · Edited' : ''}</span></span></button>
         <${Info} k=${r.id}/>
         ${pro ? html`<${Switch} id=${`dr-${r.id}`} checked=${r.enabled} label="${r.label} on" onChange=${v => act('toggle_rule', { scope: 'defaults', rule_id: r.id, enabled: v }, { ok: v ? `${r.label} on by default` : `${r.label} off by default` })}/>` : html`<${ProLock} label=${r.label} onTap=${lockTap}/>`}</div>`)}</div>
       <div class="faint" style="font-size:12px;margin-top:6px">★ Must-pass: one red means Sell <${Info} k="mustpass"/></div></section>
@@ -572,7 +562,7 @@ function Notifications() {
     <div class="li"><span class="grow"><span class="t">Browser notifications</span><span class="s ${state[1]}">${state[0]}</span></span>
       ${perm === 'granted' ? html`<button class="btn small" onClick=${() => notify.test()}>Send test</button>` : perm === 'default' ? html`<button class="btn small primary" onClick=${allow}>Allow</button>` : null}</div>
     <div class="li"><span class="grow"><span class="t">Urgent alerts</span><span class="s">A must-pass rule breaks · every plan · always on</span></span><${Switch} id="nt-crit" checked=${true} disabled=${true} label="Urgent alerts" onChange=${() => {}}/></div>
-    <div class="li"><span class="grow"><span class="t">Every change</span><span class="s">${pro ? 'Rating changes, drafted orders, what Claude prepared' : html`<span class="lock">Pro</span> Rating changes, drafts, Claude's work`}</span></span><${Switch} id="nt-push" checked=${S.notif.push} label="Every change" onChange=${async v => { if (v && notify.permission() === 'default') setPerm(await notify.askPermission()); act('set_notif', { push: v }, { ok: v ? 'You\'ll get an alert for every change' : 'Only urgent alerts now' }); }}/></div>
+    <div class="li"><span class="grow"><span class="t">Every change</span><span class="s">${pro ? 'Rating changes, drafted orders, what Claude prepared' : html`<span class="lock">Pro</span> Rating changes, drafts, Claude's work`}</span></span>${pro ? html`<${Switch} id="nt-push" checked=${S.notif.push} label="Every change" onChange=${async v => { if (v && notify.permission() === 'default') setPerm(await notify.askPermission()); return act('set_notif', { push: v }, { ok: v ? 'You\'ll get an alert for every change' : 'Only urgent alerts now' }); }}/>` : html`<${ProLock} label="Every change" onTap=${() => toast('Alerts for every change are a Pro feature', { action: 'See plans', go: 'pricing' })}/>`}</div>
     <div class="li"><span class="grow"><span class="t">Weekly email digest</span><span class="s">Coming soon · not sent in this prototype</span></span><${Switch} id="nt-email" checked=${false} disabled=${true} label="Email digest" onChange=${() => {}}/></div></div>
     <p class="faint" style="font-size:12px;margin:8px 2px 0">Alerts arrive while FunInvestments is open in a tab, even in the background.</p></section>`;
 }
@@ -649,18 +639,10 @@ const PLAN_ROWS = [
 const cell = v => (v === true ? html`<span class="ok" aria-label="Included">✓</span>` : v === false ? html`<span class="faint" aria-label="Not included">—</span>` : v);
 const toConnect = () => { go('account'); setTimeout(() => document.getElementById('connect-claude')?.scrollIntoView({ behavior: 'smooth' }), 150); };
 
-function ClaudeRow() {
-  const S = store.S;
-  return S.claudeConnected
-    ? html`<div class="li"><span class="grow"><span class="t withic">${I.spark} Claude connected</span><span class="s">${S.lastClaudeCall?.time ? `Last active ${ago(S.lastClaudeCall.time)}` : 'Ready when you are'}</span></span><button class="linkbtn" onClick=${() => go('activity')}>Activity</button></div>`
-    : html`<div class="li"><span class="grow"><span class="t withic">${I.spark} Claude not connected <${Info} k="claude"/></span><span class="s">Optional. It researches, you confirm.</span></span><button class="btn small" onClick=${toConnect}>Connect</button></div>`;
-}
-
 export function About() {
   const S = store.S, P = S.planInfo, pro = S.plan === 'pro';
-  const first = S.baskets.length === 0, seen = tourSeen();
+  const first = S.baskets.length === 0;
   const models = S.baskets.filter(b => b.kind === 'model').length, tracking = S.baskets.length - models;
-  const t = S.todo?.[0];
   const openFlags = S.flags.filter(f => f.status === 'open').length;
   const flagsLeft = Math.max(0, P.flagsPerMonth - (S.flagsThisMonth || 0));
   // What applies to this user right now, shown as a small tag on the card.
@@ -674,20 +656,12 @@ export function About() {
   const rank = id => (first ? 0 : hot[id] ? 0 : ['watch', 'results', 'confirm', 'flag'].includes(id) ? 1 : 2);
   const stories = STORIES.map((s, i) => [s, i]).sort((a, b) => rank(a[0].id) - rank(b[0].id) || a[1] - b[1]).map(x => x[0]);
   return html`<div>
-    <div class="row between" style="margin-top:4px"><h1>Explore the app</h1>${!first && html`<button class="btn small ghost" onClick=${startTour}>Take tour</button>`}</div>
-    ${first ? html`<p class="muted" style="margin:8px 0 0;line-height:1.5">Stick to your own investing rules. The app watches; you decide.</p>
-      <section class="card startcard" aria-label="Start here"><span class="eyebrow">Start here</span>
-        <div class="sc-text"><b>${seen ? 'Create your first basket' : 'New here? Take the tour'}</b><div class="muted">${seen ? 'Pick stocks yourself or ask Claude.' : 'A quick walk around the app.'}</div></div>
-        <button class="btn small primary" onClick=${seen ? () => newBasket() : startTour}>${seen ? 'Create basket' : 'Start tour'}</button>
-        <button class="linkbtn sc-alt" onClick=${seen ? startTour : () => newBasket()}>${seen ? 'Take the tour again' : 'Skip, create a basket'}</button></section>`
-    : html`<section class="section"><div class="section-head"><h2>Where you are</h2>${S.todo.length > 1 && html`<button class="linkbtn" onClick=${() => go('activity')}>+${S.todo.length - 1} more</button>`}</div>
-      <div class="card list" style="padding:2px 16px">
-        <div class="li"><span class="grow"><span class="t">${t ? t.text : 'All caught up'}</span><span class="s">${t ? t.detail : 'Your rules are watching.'}</span></span>${t && html`<button class="btn small primary" onClick=${() => doTodo(t)}>${TODO_BTN[t.kind] || 'Open'}</button>`}</div>
-        <div class="li"><span class="grow"><span class="t">${pro ? 'Pro' : 'Free'} plan</span><span class="s">${pro ? `${models} basket${models === 1 ? '' : 's'} · daily checks · unlimited flags` : `${models} of ${P.maxBaskets} basket · weekly checks · ${flagsLeft} flag${flagsLeft === 1 ? '' : 's'} left`}</span></span><button class="linkbtn" onClick=${() => go('pricing')}>${pro ? 'Plans' : 'See Pro'}</button></div>
-        <${ClaudeRow}/></div></section>`}
+    <h1 style="margin-top:4px">Explore the app</h1>
+    <section class="card tourcta" aria-label="Take the tour"><div class="grow"><b>New here, or need a refresher?</b><div class="muted">A 1-minute walk around the app.</div></div>
+      <button class="btn primary" onClick=${startTour}>Take the tour</button></section>
     <section class="section"><h2>Your rules</h2><div class="card list" style="padding:2px 16px">
-      <div class="li"><span class="grow"><span class="t">Default rules</span><span class="s">13 checks for new baskets and stock ratings</span></span><button class="btn small" onClick=${() => go('rules')}>Edit</button></div>
-      <div class="li"><span class="grow"><span class="t">A basket's own rules</span><span class="s">Open a basket → ⚙ Edit rules</span></span>${S.baskets.length ? html`<button class="linkbtn" onClick=${() => go('basket-' + S.baskets[0].id)}>Open ${shortName(S.baskets[0].name)}</button>` : html`<button class="linkbtn" onClick=${() => newBasket()}>Create one</button>`}</div></div></section>
+      <div class="li"><span class="grow"><span class="t">Default rules</span><span class="s">13 checks for new baskets and stock ratings</span></span><button class="btn small" onClick=${() => go('rules')}>${pro ? 'Edit' : 'View'}</button></div>
+      <div class="li"><span class="grow"><span class="t">A basket's own rules</span><span class="s">Open a basket → ⚙ Edit rules</span></span>${S.baskets.length ? html`<button class="linkbtn" onClick=${() => go(S.baskets.length === 1 ? 'basket-' + S.baskets[0].id : 'baskets')}>${S.baskets.length === 1 ? `Open ${shortName(S.baskets[0].name)}` : 'Baskets'}</button>` : html`<button class="linkbtn" onClick=${() => newBasket()}>Create one</button>`}</div></div></section>
     <section class="section"><div class="section-head"><h2>How it works</h2><span class="faint" style="font-size:12px">Tap for an example</span></div>
       <div class="can">${stories.map(s => html`<${Story} key=${s.id} s=${s} tag=${tags[s.id]} hot=${hot[s.id]}/>`)}</div></section>
     <section class="section about-plans" id="plans"><div class="section-head"><h2>Plans and prices <${Info} k="plandemo"/></h2><${PlanSwitch}/></div>
