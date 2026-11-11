@@ -218,12 +218,14 @@ test('parity: every MCP tool gives the same result as the website door', () => {
     c('apply_default_rules', { basket_id: b.id });
     c('reset_rules', { basket_id: b.id });
     c('set_basket_rule', { basket_id: b.id, max_stage_weight: 45 });
-    c('create_order', { basket_id: b.id, side: 'buy', amount: 50000 });
+    const ord = c('create_order', { basket_id: b.id, side: 'buy', amount: 50000 });
+    c('cancel_order', { order_id: ord.data.orders[0].id });
     c('get_alerts', {});
     c('get_refill_plan', { basket_id: b.id });
     c('add_news_flag', { symbol: 'PRECWIRE', metric: 'de', impact: 'worse', note: 'x' });
     c('get_rule_scorecard', { basket_id: b.id });
     c('exit_basket', { basket_id: b.id });
+    c('request_delete_basket', { basket_id: b.id, reason: 'x' });
     c('get_activity', {});
     return out;
   };
@@ -565,4 +567,45 @@ test('rating cutoffs: Pro edits Buy/Hold/Sell by warnings for defaults, a basket
   assert.equal(dispatch(st, 'add_stock', { symbol: 'NTPC' }, 'claude').error.code, 'which_basket');
   ok(dispatch(st, 'reset_rules', { scope: 'all' }, 'claude'));
   assert.equal(nf(), 'pass');
+});
+
+test('Claude asks to delete a basket; the person confirms or keeps it', () => {
+  const st = createState();
+  dispatch(st, 'set_plan', { plan: 'pro' }, 'you');
+  const b = dispatch(st, 'create_basket', { name: 'Gone soon', symbols: AC }, 'claude').data.basket;
+  assert.equal(dispatch(st, 'delete_basket', { basket_id: b.id }, 'claude').error.code, 'person_only');
+  const r = dispatch(st, 'request_delete_basket', { basket_id: b.id, reason: 'You asked to start over' }, 'claude');
+  assert.ok(r.ok);
+  const s1 = dispatch(st, 'get_state', {}, 'you').data;
+  assert.equal(s1.todo[0].kind, 'delete');
+  assert.equal(s1.baskets.find(x => x.id === b.id).deleteRequest.by, 'claude');
+  assert.equal(s1.activity[0].kind, 'needs_you');
+  dispatch(st, 'keep_basket', { basket_id: b.id }, 'you');
+  assert.ok(!dispatch(st, 'get_state', {}, 'you').data.todo.some(t => t.kind === 'delete'));
+  dispatch(st, 'request_delete_basket', { basket_id: b.id }, 'claude');
+  assert.ok(dispatch(st, 'delete_basket', { basket_id: b.id }, 'you').ok);
+  assert.ok(!dispatch(st, 'get_state', {}, 'you').data.todo.some(t => t.kind === 'delete'));
+});
+
+test('exit on a basket with no shares never silently cancels waiting buys', () => {
+  const st = createState();
+  dispatch(st, 'set_plan', { plan: 'pro' }, 'you');
+  const b = dispatch(st, 'create_basket', { name: 'Fresh', symbols: AC }, 'claude').data.basket;
+  const o = dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 50000 }, 'claude').data.orders;
+  const r = dispatch(st, 'exit_basket', { basket_id: b.id }, 'claude');
+  assert.equal(r.error.code, 'nothing_held');
+  assert.equal(st.orders.filter(x => x.status === 'pending').length, o.length);
+  assert.ok(dispatch(st, 'cancel_order', { order_id: o[0].id }, 'claude').ok);
+});
+
+test('the return right after buying says it is the trading cost', () => {
+  const st = createState();
+  dispatch(st, 'set_plan', { plan: 'pro' }, 'you');
+  const b = dispatch(st, 'create_basket', { name: 'Cost', symbols: AC }, 'you').data.basket;
+  const o = dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 50000 }, 'you').data.orders;
+  dispatch(st, 'confirm_order', { order_ids: o.map(x => x.id) }, 'you');
+  const v = dispatch(st, 'get_basket_status', { basket_id: b.id }, 'you').data.basket;
+  assert.ok(v.pnl < 0 && v.costs > 0);
+  assert.ok(Math.abs(v.pnl + v.costs) < 1, `pnl ${v.pnl} vs costs ${v.costs}`);
+  assert.match(v.pnlNote, /trading cost/);
 });

@@ -4,7 +4,7 @@ import { store, act, read, go, goSheet, openSheet, copy, toast, confirmDialog } 
 import * as api from './client.js';
 import { inr, inr2, pct, cls, short, dateLabel, shortName, STATUS, Pill, Src, Avatar, Mock, Chg, I, Sparkline, Stepper, Switch, ProLock, Empty, ruleLimits } from './lib.js';
 import { Info } from './glossary.js';
-import { exitBasket } from './sheets.js';
+import { exitBasket, deleteBasket } from './sheets.js';
 import { startTour, tourSeen } from './tour.js';
 import { STORIES, Story } from './stories.js';
 import * as notify from './notify.js';
@@ -16,10 +16,11 @@ function doTodo(t) {
   if (t.kind === 'orders') openSheet({ type: 'review', ids: t.ids });
   else if (t.kind === 'alerts' || t.kind === 'flags') go('alerts');
   else if (t.kind === 'invest') openSheet({ type: 'invest', id: t.basketId });
+  else if (t.kind === 'delete') { const b = store.S.baskets.find(x => x.id === t.basketId); if (b) deleteBasket(b); }
   else if (t.kind === 'basket') goSheet('basket-' + t.basketId, { type: 'addstocks', id: t.basketId });
   else if (t.basketId) go('basket-' + t.basketId);
 }
-const TODO_BTN = { orders: 'Review', alerts: 'Open', basket: 'Add stocks', invest: 'Invest', flags: 'See' };
+const TODO_BTN = { delete: 'Review', orders: 'Review', alerts: 'Open', basket: 'Add stocks', invest: 'Invest', flags: 'See' };
 export function NextStep() {
   const S = store.S;
   const t = S.todo?.[0];
@@ -308,7 +309,7 @@ export function Basket({ id }) {
       <button class="iconbtn" aria-label="Basket options" onClick=${() => openSheet({ type: 'basketmenu', id: b.id })}>${I.more}</button></div>
     <section class="bhead">
       ${b.isInvested ? html`<div class="big num">${inr(b.value)}</div>
-        <div class="row wrap" style="font-size:14px;gap:10px"><span class="${cls(b.pnl)} num">${b.pnl >= 0 ? '+' : '−'}${inr(Math.abs(b.pnl))} (${pct(b.returnPct)})</span><span class="muted">vs Nifty 50 <b class=${cls(b.vsNifty)}>${b.vsNifty > 0 ? '+' : ''}${b.vsNifty.toFixed(1)} pts</b> <${Info} k="vsnifty"/></span></div>`
+        <div class="row wrap" style="font-size:14px;gap:10px"><span class="${cls(b.pnl)} num">${b.pnl >= 0 ? '+' : '−'}${inr(Math.abs(b.pnl))} (${pct(b.returnPct)})</span><span class="muted">vs Nifty 50 <b class=${cls(b.vsNifty)}>${b.vsNifty > 0 ? '+' : ''}${b.vsNifty.toFixed(1)} pts</b> <${Info} k="vsnifty"/></span>${b.pnlNote && html`<span class="muted" style="font-size:13px;flex-basis:100%">${b.pnlNote}</span>`}</div>`
       : html`<div class="bstate">${b.kind === 'model' && b.count < b.limits.minStocks ? `${b.count} of ${b.limits.minStocks} stocks` : `${b.count} stock${b.count === 1 ? '' : 's'}`} · ${b.realized ? `not invested · last exit ${b.realized >= 0 ? 'profit' : 'loss'} ${inr(Math.abs(b.realized))}` : 'not invested yet'}</div>`}
       <button class="btn ${A.quiet ? '' : 'primary'} block" data-tour="primary" onClick=${A.run}>${A.label}</button>
       ${A.why && html`<p class="muted bwhy">${A.why}${A.claude ? html` <button class="linkbtn" onClick=${() => copy(`Find ${b.limits.minStocks - b.count} more ${b.themeLabel || ''} stocks for my "${b.name}" basket in FunInvestments and add them.`)}>Copy a prompt for Claude</button>` : ''}</p>`}

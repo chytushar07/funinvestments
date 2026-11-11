@@ -463,7 +463,8 @@ export function basketView(st, b) {
   return {
     id: b.id, name: b.name, description: b.description || '', kind: b.kind, theme: b.theme, themeLabel: b.theme ? THEME_LABEL[b.theme] : b.themeName || null,
     source: b.source, editedBy: b.editedBy || null, createdAt: b.createdAt, updatedAt: b.updatedAt || b.createdAt,
-    value: r2(value), cash: r2(b.cash), invested: r2(inv), realized: r2(b.realized || 0), isInvested: isInv, pnl, returnPct: ret, niftyPct: niftyRet, vsNifty: r2(ret - niftyRet),
+    value: r2(value), cash: r2(b.cash), invested: r2(inv), realized: r2(b.realized || 0), isInvested: isInv, pnl, returnPct: ret, costs: isInv ? r2(b.costs || 0) : 0, deleteRequest: b.deleteRequest || null,
+    pnlNote: isInv && (b.costs || 0) > 0 ? (Math.abs(pnl + (b.costs || 0)) < Math.max(1, (b.costs || 0) * 0.5) ? `This is the 0.1% trading cost (${fmtINR(b.costs)}), not a price move` : `Includes ${fmtINR(b.costs)} of trading costs (0.1% per trade)`) : null, niftyPct: niftyRet, vsNifty: r2(ret - niftyRet),
     count: b.symbols.length, limits: { ...b.limits, maxStocks: Math.min(b.limits.maxStocks, plan(st).maxStocks) }, rules: b.rules,
     overPlanMax: b.kind === 'model' && b.symbols.length > Math.min(b.limits.maxStocks, plan(st).maxStocks),
     counts: { pass: stocks.filter(s => s.status === 'pass').length, watch: stocks.filter(s => s.status === 'watch').length, remove: stocks.filter(s => s.status === 'remove').length },
@@ -658,6 +659,15 @@ const OPS = {
     return { deleted: b.id, name: b.name, returnedCash: b.kind === 'model' ? r2(returned) : 0, profit: holds ? r2(returned - cost) : 0, cash: st.cash };
   },
 
+  // Claude (or anyone) can ask for a basket to be deleted; the person confirms or keeps it in the website.
+  request_delete_basket(st, a, actor) {
+    const b = getBasket(st, a.basket_id);
+    b.deleteRequest = { by: actor, at: st.clock, reason: String(a.reason || '').slice(0, 200) };
+    const p = OPS.delete_preview(st, a);
+    return { requested: b.id, name: b.name, preview: p, website: null, note: p.holds ? `Waiting for the user: in the website they choose "Sell everything and delete" (about ${fmtINR(p.moneyBack)} back, ${p.profit >= 0 ? 'profit' : 'loss'} ${fmtINR(Math.abs(p.profit))}) or "Keep it".` : 'Waiting for the user to tap Delete (or Keep it) in the website.' };
+  },
+  keep_basket(st, a) { const b = getBasket(st, a.basket_id); delete b.deleteRequest; return { kept: b.id, name: b.name }; },
+
   // What deleting would do, so the person sees it in ₹ before choosing.
   delete_preview(st, a) {
     const b = getBasket(st, a.basket_id);
@@ -671,16 +681,19 @@ const OPS = {
   exit_basket(st, a, actor) {
     const b = getBasket(st, a.basket_id);
     if (b.kind === 'tracking') throw new ApiError('tracking_no_orders', 'Tracking baskets hold your real shares. Sell them in your broker.');
-    for (const o of st.orders) if (o.basketId === b.id && o.status === 'pending') Object.assign(o, { status: 'cancelled', cancelReason: 'Replaced by exit' });
+    const held = Object.entries(b.holdings).filter(([, h]) => h.qty > 0);
+    const pend = st.orders.filter(o => o.basketId === b.id && o.status === 'pending');
+    if (!held.length && pend.length) throw new ApiError('nothing_held', `${b.name} holds no shares yet, so there is nothing to sell. It has ${pend.length} order${pend.length > 1 ? 's' : ''} waiting for the user to confirm; to drop ${pend.length > 1 ? 'them' : 'it'}, use cancel_order or the user taps "Not now" in the website. To remove the basket, use request_delete_basket.`);
+    for (const o of pend) Object.assign(o, { status: 'cancelled', cancelReason: 'Replaced by exit' });
     const group = nid(st, 'g');
-    const orders = Object.entries(b.holdings).filter(([, h]) => h.qty > 0)
+    const orders = held
       .map(([sym, h]) => makeOrder(st, { basketId: b.id, symbol: sym, side: 'sell', qty: h.qty, source: actor, tag: 'exit', group, reason: `Exit ${b.name}: sell all` }));
     if (!orders.length) {
       const back = b.cash; st.cash = r2(st.cash + back); b.cash = 0; b.netInvested = 0; b.niftyAtInvest = null;
       return { orders: [], returnedCash: r2(back), note: 'Nothing to sell. Any basket cash went back to practice cash.' };
     }
     track(st, 'exit_drafted', { source: actor, n: orders.length });
-    return { orders, estimatedProceeds: r2(orders.reduce((t, o) => t + o.estValue, 0) + b.cash), costBasis: r2(b.netInvested), note: 'Pending. Confirm in the website to sell everything.' };
+    return { orders, cancelled: pend.length, estimatedProceeds: r2(orders.reduce((t, o) => t + o.estValue, 0) + b.cash), costBasis: r2(b.netInvested), note: `Pending. Confirm in the website to sell everything.${pend.length ? ` ${pend.length} earlier order${pend.length > 1 ? 's were' : ' was'} cancelled.` : ''}` };
   },
 
   add_stock(st, a, actor) {
@@ -946,7 +959,8 @@ const OPS = {
       if (!o || o.status !== 'pending') continue;
       const b = st.baskets.find(x => x.id === o.basketId);
       if (!b) { Object.assign(o, { status: 'cancelled', cancelReason: 'Basket deleted' }); continue; }
-      const f = execute(o, prov.getQuote(o.symbol), st.universe[o.symbol]?.metrics.adtv);
+      const q = prov.getQuote(o.symbol), f = execute(o, q, st.universe[o.symbol]?.metrics.adtv);
+      b.costs = r2((b.costs || 0) + Math.abs(f.value - q.price * o.qty)); // the 0.1% trading cost, kept so the return can say what it includes
       if (o.side === 'buy') {
         if (f.value > st.cash + b.cash + 0.01) throw new ApiError('insufficient', `Need ${fmtINR(f.value)}, have ${fmtINR(st.cash + b.cash)}`);
         const fromBasket = Math.min(b.cash, f.value); b.cash = r2(b.cash - fromBasket); st.cash = r2(st.cash - (f.value - fromBasket));
@@ -973,7 +987,7 @@ const OPS = {
       const exited = filled.some(o => o.basketId === b.id && o.tag === 'exit') && !invested(b) && !st.orders.some(o => o.basketId === b.id && o.status === 'pending' && o.tag === 'exit');
       if (exited) {
         const back = r2(b.cash), profit = r2(back - (b.netInvested || 0));
-        st.cash = r2(st.cash + back); b.cash = 0; b.netInvested = 0; b.niftyAtInvest = null;
+        st.cash = r2(st.cash + back); b.cash = 0; b.netInvested = 0; b.niftyAtInvest = null; b.costs = 0;
         b.realized = r2((b.realized || 0) + profit);
         logDecision(st, { basketId: b.id, symbol: null, basketName: b.name, action: 'exited', trigger: `Sold all · ${fmtINR(back)} back · ${profit >= 0 ? 'profit' : 'loss'} ${fmtINR(Math.abs(profit))}`, source: actor });
         exits.push({ basketId: b.id, name: b.name, returnedCash: back, profit });
@@ -1195,6 +1209,7 @@ function todoList(st) {
     out.push({ kind: 'orders', priority: urgentSell ? 0 : 1, basketId: bid, ids: os.map(o => o.id), by,
       text: `Confirm ${os.length} order${os.length > 1 ? 's' : ''} in ${bname(bid)}`, detail: `${[buys && `${buys} buy`, sells && `${sells} sell`].filter(Boolean).join(', ')} · prepared by ${who.length > 1 ? `${who.slice(0, -1).join(', ')} and ${who.at(-1)}` : by}` });
   }
+  for (const b of st.baskets) if (b.deleteRequest) out.push({ kind: 'delete', priority: 1, basketId: b.id, by: b.deleteRequest.by, text: `Delete ${b.name}?`, detail: `${b.deleteRequest.by === 'claude' ? 'Claude asked' : 'Asked'}${b.deleteRequest.reason ? `: ${b.deleteRequest.reason}` : ''}${invested(b) ? ' · it still holds shares' : ''}` });
   // An urgent alert that came with an order is covered by that order (above) while it waits, and is settled once the order is confirmed or cancelled.
   const urgent = st.alerts.filter(a => a.critical && !a.read && a.action?.kind !== 'orders');
   if (urgent.length) out.push({ kind: 'alerts', priority: 2, text: `Read ${urgent.length} urgent alert${urgent.length > 1 ? 's' : ''}`, detail: urgent[0].text });
@@ -1205,7 +1220,7 @@ function todoList(st) {
   return out.sort((a, b) => a.priority - b.priority);
 }
 
-const READ_LABEL = { get_universe: 'Looked through the stock list', get_basket_status: 'Checked basket status', get_alerts: 'Read your alerts', get_refill_plan: 'Checked replacement options', get_rule_scorecard: 'Read the past test', get_activity: 'Caught up on recent activity' };
+const READ_LABEL = { get_universe: 'Looked through the stock list', get_basket_status: 'Checked basket status', get_alerts: 'Read your alerts', get_refill_plan: 'Checked replacement options', get_rule_scorecard: 'Read the past test', get_activity: 'Caught up on recent activity', get_rules: 'Read your rules', get_orders: 'Checked orders', get_state: 'Checked the app' };
 const ids = os => (os || []).map(o => o.id);
 function activitySummary(st, op, a, res) {
   const d = res.ok ? res.data : null;
@@ -1216,7 +1231,7 @@ function activitySummary(st, op, a, res) {
     case 'update_basket': return { text: `Edited basket "${d.basket.name}"`, kind: 'change', basketId: d.basket.id };
     case 'add_stock': return { text: `Added ${st.universe[upper(a.symbol)]?.name || a.symbol} to "${d.basket.name}"`, kind: 'change', basketId: d.basket.id };
     case 'remove_stock': return d.orders ? { text: `Prepared a sale of ${st.universe[upper(a.symbol)]?.name || a.symbol}`, kind: 'needs_you', orderIds: ids(d.orders) } : { text: `Removed ${st.universe[upper(a.symbol)]?.name || a.symbol} from "${d.basket.name}"`, kind: 'change' };
-    case 'exit_basket': return { text: d.orders.length ? `Prepared exit of "${bn(a.basket_id)}": ${d.orders.length} sell orders` : `Exit of "${bn(a.basket_id)}": nothing to sell`, kind: d.orders.length ? 'needs_you' : 'change', orderIds: ids(d.orders) };
+    case 'exit_basket': return { text: d.orders.length ? `Prepared exit of "${bn(a.basket_id)}": ${d.orders.length} sell orders${d.cancelled ? ` (${d.cancelled} earlier order${d.cancelled > 1 ? 's' : ''} cancelled)` : ''}` : `Exit of "${bn(a.basket_id)}": nothing to sell`, kind: d.orders.length ? 'needs_you' : 'change', orderIds: ids(d.orders) };
     case 'create_order': return { text: `Prepared ${d.orders.length} ${d.orders[0]?.side || ''} order${d.orders.length > 1 ? 's' : ''} for "${bn(d.orders[0]?.basketId)}" (about ${fmtINR(d.orders.reduce((t, o) => t + o.estValue, 0))})`, kind: 'needs_you', basketId: d.orders[0]?.basketId, orderIds: ids(d.orders) };
     case 'add_news_flag': return { text: `Flagged news on ${d.flag.name}: ${d.flag.metricLabel} likely ${d.flag.impact}${d.drafted_orders.length ? ' · sell prepared' : ''}`, kind: d.drafted_orders.length ? 'needs_you' : 'change', orderIds: ids(d.drafted_orders) };
     case 'set_rule': return { text: `Changed "${d.rule.label}" limits in ${d.applied_to}`, kind: 'change' };
@@ -1233,6 +1248,8 @@ function activitySummary(st, op, a, res) {
       return { text: d.exits.length ? `Exited "${d.exits[0].name}": ${fmtINR(d.exits[0].returnedCash)} back as cash` : `${[part(buys, 'Bought'), part(sells, 'Sold')].filter(Boolean).join(', ')}${where.length === 1 ? ` in "${bn(where[0])}"` : ''}`, kind: 'change', basketId: where[0] };
     }
     case 'cancel_order': return { text: d.order.side === 'sell' && (d.order.source === 'rules' || d.order.tag === 'news_only' || d.order.tag === 'rules') ? `Kept ${d.order.name} anyway` : d.order.source === 'rules' ? `Skipped the suggested ${d.order.side} of ${d.order.name}` : `Cancelled the ${d.order.side} order for ${d.order.name}`, kind: 'change', basketId: d.order.basketId };
+    case 'request_delete_basket': return { text: `Asked you to delete "${d.name}"`, kind: 'needs_you', basketId: d.requested };
+    case 'keep_basket': return { text: `Kept "${d.name}"`, kind: 'change', basketId: d.kept };
     case 'delete_basket': return { text: `Deleted basket "${d.name || a.name || 'basket'}"`, kind: 'change' };
     case 'duplicate_basket': return { text: `Copied a basket as "${d.basket.name}"`, kind: 'change', basketId: d.basket.id };
     case 'reset_rules': return { text: d.scope === 'all' ? `Reset the default rules and all ${d.baskets_reset} baskets` : d.scope === 'defaults' ? 'Reset the default rules to the original 13' : `Reset the rules of "${bn(a.basket_id)}" to default`, kind: 'change' };
@@ -1291,7 +1308,7 @@ export function dispatch(st, op, args = {}, actor = 'you') {
 }
 // The activity log is "what happened": every Claude call (look-ups included, kind 'read') and the
 // person's own meaningful website actions (actor 'you'). Website reads, settings and failed taps are not logged.
-const USER_LOGGED = new Set(['create_basket', 'update_basket', 'duplicate_basket', 'delete_basket', 'exit_basket', 'add_stock', 'remove_stock', 'add_candidate',
+const USER_LOGGED = new Set(['keep_basket', 'create_basket', 'update_basket', 'duplicate_basket', 'delete_basket', 'exit_basket', 'add_stock', 'remove_stock', 'add_candidate',
   'set_rule', 'set_rating_cutoffs', 'toggle_rule', 'reset_rules', 'apply_default_rules', 'set_basket_rule', 'confirm_order', 'cancel_order', 'add_news_flag', 'delete_news_flag', 'advance_day', 'advance_quarter']);
 function logActivity(st, op, args, res, actor = 'claude') {
   st.activity ||= [];
@@ -1311,5 +1328,7 @@ function recentActivity(st) {
 }
 // "needs_you" entries say whether the orders they prepared are still waiting (pending) or already settled.
 function activityView(st, list) {
-  return list.map(x => (x.kind === 'needs_you' && x.orderIds ? { ...x, pending: x.orderIds.some(id => st.orders.some(o => o.id === id && o.status === 'pending')) } : x));
+  return list.map(x => x.kind !== 'needs_you' ? x
+    : x.orderIds ? { ...x, pending: x.orderIds.some(id => st.orders.some(o => o.id === id && o.status === 'pending')) }
+    : x.tool === 'request_delete_basket' ? { ...x, pending: !!st.baskets.find(b => b.id === x.basketId)?.deleteRequest } : x);
 }

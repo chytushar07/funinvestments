@@ -4,7 +4,7 @@ import { store, act, read, go, goSheet, openSheet, closeSheet, copy, toast, conf
 import { inr, inr2, pct, cls, short, shortName, STATUS, Pill, Src, Avatar, I, Stepper, Logo } from './lib.js';
 import { Info, InfoSheet } from './glossary.js';
 import { orderWhy } from './pages.js';
-export { exitBasket };
+export { exitBasket, deleteBasket };
 
 export function SheetHost() {
   const s = store.ui.sheet;
@@ -356,10 +356,7 @@ const SHEETS = {
   basketmenu({ s }) {
     const b = store.S.baskets.find(x => x.id === s.id);
     if (!b) return null;
-    const del = () => (b.kind === 'model' && b.isInvested ? deleteBasket(b) : confirmDialog({
-      title: `Delete ${b.name}?`, body: 'Its pending orders and alerts go too. This can\'t be undone.', confirm: 'Delete basket', danger: true,
-      onConfirm: async () => { const r = await act('delete_basket', { basket_id: b.id }, { ok: 'Deleted' }); if (r?.ok) go('baskets'); },
-    }));
+    const del = () => deleteBasket(b);
     const S = store.S, pro = S.plan === 'pro';
     const full = !pro && S.baskets.filter(x => x.kind === b.kind).length >= (b.kind === 'model' ? S.planInfo.maxBaskets : S.planInfo.maxTracking);
     const dup = async () => { if (full) { toast(`Free plan: 1 ${b.kind === 'model' ? '' : 'tracking '}basket. Pro has unlimited.`, { action: 'See plans', go: 'pricing' }); return; } const r = await act('duplicate_basket', { basket_id: b.id }, { ok: d => `Duplicated as ${d.basket.name}` }); if (r?.ok) go('basket-' + r.data.basket.id); };
@@ -376,12 +373,21 @@ const SHEETS = {
   delete({ s }) {
     const b = store.S.baskets.find(x => x.id === s.id), p = s.p;
     if (!b) return null;
-    const sellDelete = async () => { const r = await act('delete_basket', { basket_id: b.id, sell_all: true }, { ok: d => `Sold and deleted · ${inr(d.returnedCash)} back to practice cash` }); if (r?.ok) go('baskets'); };
-    return html`<div class="stack" style="gap:16px"><h2>Delete ${b.name}?</h2>
+    const req = b.deleteRequest;
+    const keep = async () => { closeSheet(); if (req) await act('keep_basket', { basket_id: b.id }, { ok: `Kept ${b.name}` }); };
+    const done = r => { if (r?.ok) { closeSheet(); go('baskets'); } };
+    const sellDelete = async () => done(await act('delete_basket', { basket_id: b.id, sell_all: true }, { ok: d => `Sold and deleted · ${inr(d.returnedCash)} back to practice cash` }));
+    const plainDelete = async () => done(await act('delete_basket', { basket_id: b.id }, { ok: 'Deleted' }));
+    const why = req && html`<p class="muted" style="margin:0">${req.by === 'claude' ? 'Claude asked to delete it' : 'Asked to delete it'}${req.reason ? `: ${req.reason}` : '.'}</p>`;
+    if (!p.holds) return html`<div class="stack" style="gap:16px"><h2>Delete ${b.name}?</h2>${why}
+      <p class="muted" style="margin:0">${p.pending ? `Its ${p.pending} waiting order${p.pending === 1 ? '' : 's'} and its alerts go too.` : 'Its rules and alerts go too.'} This can't be undone.</p>
+      <div class="sticky-cta stack" style="gap:6px"><button class="btn dangerfill block" onClick=${plainDelete}>Delete basket</button>
+        <button class="linkbtn quietbtn" onClick=${keep}>Keep it</button></div></div>`;
+    return html`<div class="stack" style="gap:16px"><h2>Delete ${b.name}?</h2>${why}
       <p class="muted" style="margin:0">It still holds ${p.holdings} stock${p.holdings === 1 ? '' : 's'}. To delete it, everything is sold at the last price first.</p>
       <dl class="kv"><dt>Money back (about)</dt><dd>${inr(p.moneyBack)}</dd><dt>${p.profit >= 0 ? 'Profit' : 'Loss'} (about)</dt><dd class=${cls(p.profit)}>${inr(Math.abs(p.profit))}</dd><dt>You put in</dt><dd>${inr(p.cost)}</dd></dl>
       <div class="sticky-cta stack" style="gap:6px"><button class="btn dangerfill block" onClick=${sellDelete}>Sell everything and delete</button>
-        <button class="btn block" onClick=${closeSheet}>Keep it</button>
+        <button class="btn block" onClick=${keep}>Keep it</button>
         <button class="linkbtn quietbtn" onClick=${() => exitBasket(b)}>Only sell, keep the basket</button></div></div>`;
   },
 
