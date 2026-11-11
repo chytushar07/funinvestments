@@ -145,6 +145,11 @@ export function Home() {
       <div class="section-head"><div><h2>Build with Claude</h2><div class="faint" style="font-size:12.5px;margin-top:2px">Claude researches. The basket lands here with its rules.</div></div>${S.claudeConnected ? html`<span class="tag claude">Connected</span>` : html`<button class="linkbtn" onClick=${() => go('account')}>Connect</button>`}</div>
       <div class="prompts">${PROMPTS.map(x => html`<div class="prompt" key=${x.t}><b>${x.t}</b><p>${x.p}</p><button class="btn small ghost" onClick=${() => copy(x.p)}>Copy prompt</button></div>`)}</div>
       <p class="faint" style="font-size:12.5px;margin:0">${S.claudeConnected ? 'Paste a prompt into Claude. You confirm every order here.' : html`Connect once in <button class="linkbtn" style="font-size:12.5px" onClick=${() => go('account')}>Settings → Connect Claude</button>, then paste a prompt into Claude.`}</p>
+      <div class="card stack" style="gap:6px;padding:12px 16px">
+        <div class="row between"><b style="font-size:14px">${I.spark} Claude activity</b>${S.activity?.length ? html`<button class="linkbtn" onClick=${() => go('activity')}>See all</button>` : null}</div>
+        ${S.activity?.length ? html`<div class="list">${(S.activity.filter(a => a.kind !== 'read').length ? S.activity.filter(a => a.kind !== 'read') : S.activity).slice(0, 3).map(a => html`<${ActivityRow} key=${a.id} a=${a}/>`)}</div>`
+          : html`<span class="muted" style="font-size:13px">Nothing yet. Paste a prompt into Claude and every step it takes shows up here, even after you close the chat.</span>`}
+      </div>
     </section>
   </div>`;
 }
