@@ -8,6 +8,7 @@ import { exitBasket, deleteBasket } from './sheets.js';
 import { startTour, tourSeen } from './tour.js';
 import { STORIES, Story } from './stories.js';
 import * as notify from './notify.js';
+import { PromptPicks, promptText } from './prompts.js';
 const warn = n => `${n} warning${n === 1 ? '' : 's'}`;
 export const ago = iso => { if (!iso) return ''; const s = Math.max(0, (Date.now() - new Date(iso)) / 1000); if (s < 60) return 'just now'; if (s < 3600) return `${Math.floor(s / 60)} min ago`; if (s < 86400) return `${Math.floor(s / 3600)} h ago`; return `${Math.floor(s / 86400)} d ago`; };
 
@@ -119,12 +120,6 @@ function newBasket(preset = {}) {
 }
 export { newBasket };
 
-const PROMPTS = [
-  { t: 'Profitable energy companies', p: 'Using FunInvestments, build a basket of energy companies that were profitable in each of the last 2 years. Use my default rules, and make "loss years" strict for this basket.' },
-  { t: 'AC value chain, moderate risk', p: 'Read my AC research and create a FunInvestments basket with the stocks that pass my rules. Keep each value-chain stage under 40%.' },
-  { t: 'Low-debt power utilities', p: 'In FunInvestments, find power companies with debt/equity under 0.5 and create a basket called "Low-debt power". Then invest ₹50,000.' },
-];
-
 // ---------- Home ----------
 export function Home() {
   const S = store.S;
@@ -136,8 +131,7 @@ export function Home() {
   const passing = U.filter(x => x.status === 'pass').sort((a, b) => a.points - b.points).slice(0, 10);
   const models = S.baskets;
   const total = S.cash + S.baskets.filter(b => b.kind === 'model').reduce((t, b) => t + b.value, 0);
-  const usedClaude = S.claudeConnected && (S.activity || []).some(a => a.actor === 'claude' && a.kind !== 'read'); // already built something with Claude: no how-to line needed
-  return html`<div>
+    return html`<div>
     <${PlanSwitch} home/>
     <${NextStep}/>
     ${!tourSeen() && S.baskets.length === 0 && !S.todo?.length && html`<div class="card tour-invite"><div><b>New here?</b><div class="muted" style="font-size:13px">Take the 1-minute tour.</div></div><button class="btn small primary" onClick=${startTour}>Start tour</button></div>`}
@@ -159,9 +153,8 @@ export function Home() {
     <${HRow} title="Rated Buy by the default rules" info="status" items=${passing} onAll=${() => seeAll({ status: 'pass' })}/>
 
     <section class="section" id="with-claude" data-tour="claude">
-      <div class="section-head"><div><h2>Build with Claude</h2>${!S.claudeConnected && html`<div class="faint" style="font-size:12.5px;margin-top:2px">Claude researches. The basket lands here with its rules.</div>`}</div>${S.claudeConnected ? html`<span class="tag claude">Connected</span>` : html`<button class="linkbtn" onClick=${() => go('account')}>Connect</button>`}</div>
-      ${(() => { const list = html`<div class="prompts">${PROMPTS.map(x => html`<div class="prompt" key=${x.t}><b>${x.t}</b><p>${x.p}</p><button class="btn small ghost" onClick=${() => copy(x.p)}>Copy prompt</button></div>`)}</div>`; return usedClaude ? html`<details class="cfold"><summary>Prompt ideas</summary>${list}</details>` : list; })()}
-      ${!usedClaude && html`<p class="faint" style="font-size:12.5px;margin:0">${S.claudeConnected ? 'Paste a prompt into Claude. You confirm every order here.' : html`Connect once in <button class="linkbtn" style="font-size:12.5px" onClick=${() => go('account')}>Settings → Connect Claude</button>, then paste a prompt into Claude.`}</p>`}
+      <div class="section-head"><div><h2>Build with Claude</h2>${!S.claudeConnected && html`<div class="faint" style="font-size:12.5px;margin-top:2px">Claude researches. You confirm every order here.</div>`}</div>${S.claudeConnected ? html`<span class="tag claude">Connected</span>` : html`<button class="linkbtn" onClick=${() => go('account')}>Connect</button>`}</div>
+      <${PromptPicks} S=${S} tools=${api.getTools()}/>
     </section>
   </div>`;
 }
@@ -312,10 +305,11 @@ export function Basket({ id }) {
         <div class="row wrap" style="font-size:14px;gap:10px"><span class="${cls(b.pnl)} num">${b.pnl >= 0 ? '+' : '−'}${inr(Math.abs(b.pnl))} (${pct(b.returnPct)})</span><span class="muted">vs Nifty 50 <b class=${cls(b.vsNifty)}>${b.vsNifty > 0 ? '+' : ''}${b.vsNifty.toFixed(1)} pts</b> <${Info} k="vsnifty"/></span>${b.pnlNote && html`<span class="muted" style="font-size:13px;flex-basis:100%">${b.pnlNote}</span>`}</div>`
       : html`<div class="bstate">${b.kind === 'model' && b.count < b.limits.minStocks ? `${b.count} of ${b.limits.minStocks} stocks` : `${b.count} stock${b.count === 1 ? '' : 's'}`} · ${b.realized ? `not invested · last exit ${b.realized >= 0 ? 'profit' : 'loss'} ${inr(Math.abs(b.realized))}` : 'not invested yet'}</div>`}
       <button class="btn ${A.quiet ? '' : 'primary'} block" data-tour="primary" onClick=${A.run}>${A.label}</button>
-      ${A.why && html`<p class="muted bwhy">${A.why}${A.claude ? html` <button class="linkbtn" onClick=${() => copy(`Find ${b.limits.minStocks - b.count} more ${b.themeLabel || ''} stocks for my "${b.name}" basket in FunInvestments and add them.`)}>Copy a prompt for Claude</button>` : ''}</p>`}
+      ${A.why && html`<p class="muted bwhy">${A.why}${A.claude ? html` <button class="linkbtn" onClick=${() => copy(promptText(S, 'invest-fill', { basketId: b.id }) || `Find ${b.limits.minStocks - b.count} more stocks for my "${b.name}" basket in FunInvestments and add them.`)}>Copy a prompt for Claude</button>` : ''}</p>`}
     </section>
     <div class="tabs" data-tour="tabs" role="tablist">${tabs.map(t => html`<button key=${t} role="tab" aria-selected=${tab === t} class=${tab === t ? 'on' : ''} onClick=${() => setTab(t)}>${t[0].toUpperCase() + t.slice(1)}</button>`)}</div>
     ${tab === 'stocks' ? html`<${BasketStocks} b=${b}/>` : tab === 'rules' ? html`<${BasketRules} b=${b}/>` : tab === 'scorecard' ? html`<${Scorecard} b=${b}/>` : html`<${BasketOverview} b=${b} setTab=${setTab}/>`}
+    <details class="plib-ask"><summary>${I.spark} Ask Claude about this basket</summary><${PromptPicks} S=${S} tools=${api.getTools()} basketId=${b.id} max=${2}/></details>
   </div>`;
 }
 
@@ -724,6 +718,7 @@ export function ConnectCard() {
   return html`<section class="section"><div class="section-head"><h2>${I.spark} Connect Claude</h2>${!on && html`<button class="btn small primary" onClick=${() => { go('account'); setTimeout(() => document.getElementById('connect-claude')?.scrollIntoView({ behavior: 'smooth' }), 150); }}>Connect</button>`}</div>
     <${ClaudeStatus} steps="1–3"/>
     ${on ? html`<${SetupFold}>${how}<//>` : how}
+    <${PromptPicks} S=${S} tools=${api.getTools()} noConnect/>
     <p class="muted" style="margin:0;font-size:13.5px">Claude's work stays saved in <button class="linkbtn" style="font-size:13.5px" onClick=${() => go('activity')}>Activity</button>. <${Info} k="claudesaved"/></p></section>`;
 }
 

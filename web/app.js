@@ -8,13 +8,14 @@ import { I, Logo, short } from './lib.js';
 import { Home, Explore, Stock, Baskets, Basket, Orders, Alerts, Pricing, Account, About, Activity, PlanSwitch, DefaultRules } from './pages.js';
 import { Tour } from './tour.js';
 import { SheetHost } from './sheets.js';
+import { PromptsPage } from './prompts.js';
 
 function parseHash() {
   const h = decodeURIComponent(location.hash.replace(/^#/, ''));
   const [r, ...rest] = h.split('-');
   if (r === 'basket' && rest.length) return { route: 'basket', param: rest.join('-') };
   if (r === 'stock' && rest.length) return { route: 'stock', param: rest.join('-') };
-  const known = ['notifications', 'home', 'explore', 'baskets', 'orders', 'alerts', 'pricing', 'account', 'about', 'activity', 'rules'];
+  const known = ['notifications', 'home', 'explore', 'baskets', 'orders', 'alerts', 'pricing', 'account', 'about', 'activity', 'rules', 'prompts'];
   return { route: known.includes(r) ? r : 'home', param: null };
 }
 
@@ -145,11 +146,11 @@ function App() {
   const S = store.S;
   if (!S) return html`<div class="shell"><main class="main"><div class="col" style="padding-top:24px"><div class="sk" style="height:44px"></div><div class="sk" style="height:180px;margin-top:18px"></div><div class="sk" style="height:180px;margin-top:12px"></div></div></main></div>`;
   const nav = NAV(S);
-  const active = route === 'basket' ? 'baskets' : route === 'stock' || route === 'explore' || route === 'activity' || route === 'notifications' ? 'home' : route;
+  const active = route === 'basket' ? 'baskets' : route === 'stock' || route === 'explore' || route === 'activity' || route === 'notifications' || route === 'prompts' ? 'home' : route;
   const page = {
     home: () => html`<${Home}/>`, explore: () => html`<${Explore}/>`, stock: () => html`<${Stock} key=${param} symbol=${param}/>`,
     baskets: () => html`<${Baskets}/>`, basket: () => html`<${Basket} key=${param} id=${param}/>`, orders: () => html`<${Orders}/>`,
-    alerts: () => html`<${Alerts}/>`, pricing: () => html`<${Pricing}/>`, account: () => html`<${Account}/>`, about: () => html`<${About}/>`, activity: () => html`<${Activity}/>`, notifications: () => html`<${Notifications}/>`, rules: () => html`<${DefaultRules}/>`,
+    alerts: () => html`<${Alerts}/>`, pricing: () => html`<${Pricing}/>`, account: () => html`<${Account}/>`, about: () => html`<${About}/>`, activity: () => html`<${Activity}/>`, notifications: () => html`<${Notifications}/>`, rules: () => html`<${DefaultRules}/>`, prompts: () => html`<${PromptsPage} S=${S} tools=${api.getTools()} onBack=${() => history.back()}/>`,
   }[route]();
   const t = store.ui.toast;
   return html`<div class="shell">
