@@ -4,6 +4,9 @@ import { store, act, read, go, goSheet, openSheet, closeSheet, copy, toast, conf
 import { inr, inr2, pct, cls, short, shortName, STATUS, Pill, Src, Avatar, I, Stepper, Logo } from './lib.js';
 import { Info, InfoSheet } from './glossary.js';
 import { orderWhy } from './pages.js';
+import { library, fill } from './prompts.js';
+// A prompt from the Claude prompt library, filled for this stock (falls back to the given text).
+const libPrompt = (id, vars, fallback) => { const p = library(store.S).find(x => x.id === id); return p ? fill(p.text, vars) : fallback; };
 export { exitBasket, deleteBasket, sellStock };
 
 export function SheetHost() {
@@ -331,7 +334,7 @@ const SHEETS = {
       <div class="chips" style="flex-wrap:wrap">${S.rules.metrics.map(r => html`<button key=${r.id} disabled=${!!f && f.metric !== r.id} class="chip ${metric === r.id ? 'on' : ''}" onClick=${() => setMetric(r.id)}>${r.label}${r.critical ? ' ★' : ''}</button>`)}</div>
       <div class="seg">${[['worse', 'Likely worse'], ['better', 'Likely better']].map(([v, l]) => html`<button key=${v} class=${impact === v ? 'on' : ''} onClick=${() => setImpact(v)}>${l}</button>`)}</div>
       <div class="field"><label for="fl-note">Headline</label><input class="input" id="fl-note" maxlength="240" placeholder="Borrowings jumped to ₹1,475 crore" value=${note} onInput=${e => setNote(e.target.value)}/></div>
-      ${!f && html`<button class="btn small ghost" onClick=${() => copy(`Read this news and flag any FunInvestments metric it affects for ${s.symbol} with add_news_flag:`)}>${I.spark} Copy prompt for Claude</button>`}
+      ${!f && html`<button class="btn small ghost" onClick=${() => copy(libPrompt('news-flag', { stock: s.name || s.symbol }, `Read this news and flag any FunInvestments metric it affects for ${s.symbol} with add_news_flag:`))}>${I.spark} Copy prompt for Claude</button>`}
       ${left != null && !f && html`<span class="faint" style="font-size:12px">${left} of 3 free flags left this month</span>`}
       <div class="sticky-cta"><button class="btn primary block" onClick=${save}>${f ? 'Save' : 'Flag'}</button></div></div>`;
   },
@@ -499,7 +502,7 @@ const SHEETS = {
         <div class="field" style="width:120px"><label for="cd-sh">Share %</label><input class="input num" id="cd-sh" type="number" min="0" max="100" value=${f.share} onInput=${e => up('share', e.target.value)}/></div></div>
       <details class="card"><summary><b>Key numbers</b> <span class="faint" style="font-size:12.5px">optional · missing counts against it</span></summary>
         <div class="grid2" style="margin-top:12px">${[['de', 'Debt / equity'], ['icr', 'Interest cover'], ['adtv', 'Traded value ₹ cr'], ['loss', 'Loss years (5)']].map(([k, l]) => html`<div class="field" key=${k}><label for=${'cd-' + k}>${l}</label><input class="input num" id=${'cd-' + k} type="number" value=${f[k]} onInput=${e => up(k, e.target.value)}/></div>`)}</div></details>
-      ${!ex && html`<button class="btn small ghost" onClick=${() => copy(`Research ${f.symbol || 'this stock'} and add it to FunInvestments with add_candidate, including all 13 metrics and its theme share.`)}>${I.spark} Copy prompt for Claude</button>`}
+      ${!ex && html`<button class="btn small ghost" onClick=${() => copy(libPrompt('build-research', { stock2: f.symbol || 'this stock' }, `Research ${f.symbol || 'this stock'} and add it to FunInvestments with all 13 numbers and its theme share.`))}>${I.spark} Copy prompt for Claude</button>`}
       <div class="sticky-cta"><button class="btn primary block" disabled=${!/^[A-Z0-9&-]{2,20}$/.test(f.symbol)} onClick=${save}>${ex ? 'Save' : 'Add stock'}</button></div></div>`;
   },
 

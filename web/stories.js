@@ -88,7 +88,9 @@ const track = () => html`
 // A story's link lands on the basket it is about: the only one opens at once, several go to the list,
 // none opens New basket with a one-line hint.
 function toBasket(test, tab, none) {
-  const list = (store.S?.baskets || []).filter(test);
+  const all = store.S?.baskets || [];
+  // Prefer the baskets the story is about (e.g. invested ones), else any practice basket.
+  const list = all.some(test) ? all.filter(test) : all.filter(b => b.kind === 'model');
   if (list.length === 1) return openBasketTab(list[0].id, tab);
   if (list.length > 1) return go('baskets');
   toast(none); newBasket();

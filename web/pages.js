@@ -318,7 +318,7 @@ export function Basket({ id }) {
       ${b.isInvested ? html`<div class="big num">${inr(b.value)}</div>
         <div class="row wrap" style="font-size:14px;gap:10px"><span class="${cls(b.pnl)} num">${b.pnl >= 0 ? '+' : '−'}${inr(Math.abs(b.pnl))} (${pct(b.returnPct)})</span><span class="muted">vs Nifty 50 <b class=${cls(b.vsNifty)}>${b.vsNifty > 0 ? '+' : ''}${b.vsNifty.toFixed(1)} pts</b> <${Info} k="vsnifty"/></span>${b.pnlNote && html`<span class="muted" style="font-size:13px;flex-basis:100%">${b.pnlNote}</span>`}</div>`
       : html`<div class="bstate">${b.kind === 'model' && b.count < b.limits.minStocks ? `${b.count} of ${b.limits.minStocks} stocks` : `${b.count} stock${b.count === 1 ? '' : 's'}`} · ${b.realized ? `not invested · last exit ${b.realized >= 0 ? 'profit' : 'loss'} ${inr(Math.abs(b.realized))}` : 'not invested yet'}</div>`}
-      ${A.quiet && b.kind === 'model' && b.isInvested ? html`<div class="bquick"><button class="btn" data-tour="primary" onClick=${A.run}>${A.label}</button><button class="btn" onClick=${() => exitBasket(b)}>Sell all</button></div>`
+      ${b.kind === 'model' && b.isInvested ? html`<div class="bquick"><button class="btn ${A.quiet ? '' : 'primary'}" data-tour="primary" onClick=${A.run}>${A.label}</button><button class="btn" onClick=${() => exitBasket(b)}>Sell all</button></div>`
       : html`<button class="btn ${A.quiet ? '' : 'primary'} block" data-tour="primary" onClick=${A.run}>${A.label}</button>`}
       ${A.why && html`<p class="muted bwhy">${A.why}${A.claude ? html` <button class="linkbtn" onClick=${() => copy(promptText(S, 'invest-fill', { basketId: b.id }) || `Find ${b.limits.minStocks - b.count} more stocks for my "${b.name}" basket in FunInvestments and add them.`)}>Copy a prompt for Claude</button>` : ''}</p>`}
     </section>
@@ -339,7 +339,7 @@ function BasketOverview({ b, setTab }) {
     <div class="card list" style="padding:2px 16px">${b.stocks.map(x => html`<button class="li btnrow" key=${x.symbol} onClick=${() => go('stock-' + x.symbol)}><${Avatar} name=${x.name} stage=${x.stage}/>
       <span class="grow"><span class="t">${x.name}</span><span class="s">${b.kind === 'tracking' || b.isInvested ? (x.qty ? `${x.qty} share${x.qty === 1 ? '' : 's'} · ${inr(x.value)}` : 'Not bought') : b.belowMin ? x.sector : `Planned ${x.target.toFixed(0)}%`}</span></span><${Pill} s=${x.status}/></button>`)}</div>
     ${notBought.length > 0 && html`<p class="muted" style="margin:-6px 2px 0;font-size:13px">${notBought.map(x => shortName(x.name)).join(', ')} ${notBought.length === 1 ? 'is' : 'are'} in the basket but not bought${notBought.some(x => x.status === 'remove') ? '' : ' (one share cost more than its part)'}.</p>`}
-    ${b.kind === 'model' && b.isInvested && !basketAction(b).quiet && html`<button class="linkbtn" style="align-self:flex-start" onClick=${() => exitBasket(b)}>Exit basket · sell everything</button>`}
+    
     ${b.kind === 'model' && html`<details class="card fold"><summary>Details</summary><div class="stack" style="gap:12px;margin-top:12px">
       <div class="row between"><span class="eyebrow">Where the money is <${Info} k="segment"/></span><span class="faint" style="font-size:12px">${b.isInvested ? 'Now' : 'Planned'}</span></div>
       <div class="wbar" role="img" aria-label=${sw.map(([s, w]) => `${stageLabel(s)} ${w}%`).join(', ')}>${sw.map(([s, w]) => html`<span key=${s} style="width:${w}%;background:${stageColor(s)}" title="${stageLabel(s)} ${w}%"></span>`)}</div>
@@ -530,7 +530,7 @@ export function Alerts() {
         <div class="row" style="gap:6px;align-items:flex-start">
           ${orders.length > 0 && html`<button class="btn small" onClick=${() => openSheet({ type: 'review', ids: orders })}>Review</button>`}
           ${a.action?.kind === 'rebalance' && S.baskets.some(b => b.id === a.action.basketId) && html`<button class="btn small" onClick=${() => openSheet({ type: 'rebalance', id: a.action.basketId })}>Rebalance</button>`}
-          ${a.action?.kind === 'claude' && html`<button class="btn small" onClick=${() => copy(a.action.prompt)}>Copy prompt</button>`}
+          ${a.action?.kind === 'claude' && html`<button class="btn small" onClick=${() => copy((a.basketId && promptText(S, 'invest-fill', { basketId: a.basketId })) || a.action.prompt)}>Copy prompt</button>`}
           <button class="iconlink" aria-label="Dismiss alert" onClick=${() => deleteAlert(a)}>${I.x}</button></div></div>`;
     })}</div>`
     : html`<${Empty} title="All quiet"><span class="muted">Alerts appear when a stock's status changes, new results come out, or a basket needs a replacement stock.</span></${Empty}>`}
@@ -558,8 +558,10 @@ export function DefaultRules() {
     ${store.ui.draftNew && html`<div class="card tourcta"><div class="grow"><b>Your new basket is waiting</b><div class="muted">It starts with these rules.</div></div><button class="btn primary" onClick=${() => { const d = store.ui.draftNew; store.ui.draftNew = null; openSheet({ type: 'new', draft: d }); }}>Back to it</button></div>`}
     ${pro ? html`<div class="card rulehelp" style="margin-top:12px"><b>Your rules for every new basket</b>
       <span class="muted">These 13 checks rate every stock on Home and Explore, and each new basket starts with them. A basket can then have its own: open it and tap <b>⚙ Edit rules</b>. Tap a rule to change its limits; the switch turns it off.</span></div>` : html`<div class="row between proline" style="margin-top:12px"><span>🔒 Editing rules is a Pro feature</span><button class="linkbtn" onClick=${goPlans}>See plans</button></div>`}
+    ${!pro && S.savedProRules && html`<p class="muted" style="font-size:13px;margin:10px 2px 0">Your Pro rule changes are saved and come back when you upgrade. On Free the 13 default rules below apply.</p>`}
     <section class="section"><${RatingCutoffs} rules=${R} target=${{ scope: 'defaults' }} pro=${pro}/></section>
     <section class="section"><div class="section-head"><span class="eyebrow">13 safety rules · defaults <${Info} k="warnings"/></span>
+      ${!pro && S.savedProRules && html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Drop your saved Pro rules?', body: 'On Free the 13 default rules apply. Your Pro rule changes are saved and come back if you upgrade. Reset drops them for good (defaults and every basket).', confirm: 'Reset', onConfirm: () => act('reset_rules', { scope: 'all' }, { ok: 'Saved Pro rules dropped' }) })}>Reset saved</button>`}
       ${pro && html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Reset default rules?', body: 'The 13 rules go back to the original limits and switches. Your baskets keep their own rules.', confirm: 'Reset', onConfirm: () => act('reset_rules', { scope: 'defaults' }, { ok: 'Default rules reset' }) })}>Reset</button>`}</div>
       <div class="card list" style="padding:2px 16px">${R.metrics.map(r => html`<div class="li" key=${r.id}>
         <button class="grow row ruleopen" onClick=${() => openSheet({ type: 'rule', scope: 'defaults', rule: r.id })}>
