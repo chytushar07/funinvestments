@@ -475,3 +475,20 @@ a.btn.primary { color: var(--brand-ink); }
 .prolock { flex: none; width: 46px; height: 28px; border-radius: 999px; border: 1px solid var(--line); background: var(--card-2); font-size: 13px; display: grid; place-items: center; }
 .proline { gap: 10px; font-size: 12.5px; color: var(--muted); padding: 2px 2px; }
 .proline .linkbtn { font-size: 12.5px; padding: 0; flex: none; }
+
+/* Plans: prices merged into the Free vs Pro table */
+.plans-table.merged .pricerow td { vertical-align: top; padding-top: 10px; padding-bottom: 12px; }
+.plans-table.merged th:nth-child(3), .plans-table.merged td:nth-child(3) { width: 48%; }
+.pfree { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.pfree b { font-size: 18px; }
+.pfree .ok { font-size: 11.5px; font-weight: 800; }
+.popts { display: flex; flex-direction: column; gap: 6px; }
+.popt { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+.popt .pp { font-size: 15px; font-weight: 800; }
+.popt .pp .faint { font-size: 11.5px; font-weight: 600; }
+.popt .pm { font-size: 11px; color: var(--muted); }
+.popt .pt { font-size: 10.5px; font-weight: 800; color: var(--brand); }
+.popt.best { border-color: color-mix(in oklab, var(--brand) 60%, var(--line)); }
+.popt.on { border-color: var(--up); box-shadow: inset 0 0 0 1px var(--up); }
+.popt .pt.ok { color: var(--up); }
+#plans { scroll-margin-top: calc(80px + env(safe-area-inset-top, 0px)); }

@@ -528,11 +528,10 @@ export function Alerts() {
 export function Pricing() {
   return html`<div>
     <div class="row" style="margin-top:4px"><button class="iconbtn" onClick=${() => history.back()} aria-label="Back">${I.back}</button><h1>Plans</h1></div>
-    <section class="section"><${PriceCards}/></section>
+
     <div class="card" style="margin-top:14px;padding:14px 16px"><b style="font-size:14px">One price, every basket</b>
       <div class="muted" style="font-size:13px;margin-top:4px;line-height:1.5">Paid model baskets elsewhere often cost ₹100–500 a month <i>each</i>. A mutual fund on ₹10 lakh costs ₹5,000–10,000 a year in fees. Pro is ₹4,499 a year for all your baskets, with no per-order fee.</div></div>
-    <section class="section"><h2>Free vs Pro, every feature</h2><${PlansTable}/></section>
-    ${store.S.plan === 'pro' && html`<button class="btn ghost block" style="margin-top:12px" onClick=${() => act('set_plan', { plan: 'free' }, { ok: 'Back on Free' })}>Switch to Free</button>`}
+    <section class="section"><${PlansTable}/></section>
     <p class="faint" style="font-size:12px;text-align:center;margin-top:12px">Prototype · mock checkout · no payment taken</p></div>`;
 }
 
@@ -604,24 +603,22 @@ export function Account() {
 
 // ---------- Prices: all three Pro options side by side (no toggle) ----------
 const inrP = n => '₹' + n.toLocaleString('en-IN');
-export function PriceCards() {
+export function PlansTable() {
   const S = store.S, pro = S.plan === 'pro';
   const PR = S.prices || { monthly: 499, quarterly: 1349, yearly: 4499 };
-  const opts = [['monthly', 'Monthly', PR.monthly, 'month', 1], ['quarterly', 'Quarterly', PR.quarterly, 'quarter', 3], ['yearly', 'Yearly', PR.yearly, 'year', 12]];
-  const start = async (v, l) => act('set_plan', { plan: 'pro', billing: v }, { ok: `Pro is on (${l.toLowerCase()}) · mock checkout` });
-  return html`<div class="pricecards">${opts.map(([v, l, price, per, m]) => {
-    const save = PR.monthly * m - price, best = v === 'yearly', mine = pro && (S.billing || 'yearly') === v;
-    return html`<div key=${v} class="pricecard ${best ? 'best' : ''} ${mine ? 'mine' : ''}">
-      <div class="row between"><b>${l}</b>${best ? html`<span class="tag unl">Best value</span>` : save > 0 ? html`<span class="tag claude">Save ${inrP(save)}</span>` : null}</div>
-      <div><span class="pc-price num">${inrP(price)}</span><span class="muted"> / ${per}</span></div>
-      <span class="faint pc-sub">${m > 1 ? `${inrP(Math.round(price / m))} a month${best ? ` · save ${inrP(save)}` : ''}` : 'Cancel anytime'}</span>
-      ${mine ? html`<button class="btn small block" disabled>Your plan ✓</button>` : html`<button class="btn small block ${best ? 'primary' : ''}" onClick=${() => start(v, l)}>${pro ? 'Switch' : 'Start Pro'}</button>`}</div>`;
-  })}</div>
-  <p class="faint" style="font-size:12px;margin:8px 2px 0">Pro: ∞ unlimited baskets, your own limits, Claude edits your rules. Free stays free. Demo: no payment is taken.</p>`;
-}
-export function PlansTable() {
-  const pro = store.S.plan === 'pro';
-  return html`<div class="tablewrap"><table class="plans-table"><thead><tr><th>Feature</th><th class=${pro ? '' : 'cur'}>Free</th><th class=${pro ? 'cur' : ''}>Pro</th></tr></thead>
+  const opts = [['monthly', PR.monthly, 'month', 1, ''], ['quarterly', PR.quarterly, 'quarter', 3, ''], ['yearly', PR.yearly, 'year', 12, 'Best value']];
+  const mine = pro ? (S.billing || 'yearly') : null;
+  const start = v => act('set_plan', { plan: 'pro', billing: v }, { ok: `Pro is on (${v}) · demo, no payment` });
+  return html`<div class="tablewrap"><table class="plans-table merged"><thead>
+    <tr><th>Feature</th><th class=${pro ? '' : 'cur'}>Free</th><th class=${pro ? 'cur' : ''}>Pro</th></tr>
+    <tr class="pricerow"><td>Price</td>
+      <td class=${pro ? '' : 'cur'}><div class="pfree"><b class="num">₹0</b><span class="faint">forever</span>
+        ${pro ? html`<button class="btn small ghost" onClick=${() => act('set_plan', { plan: 'free' }, { ok: 'Back on Free' })}>Switch</button>` : html`<span class="ok">Your plan ✓</span>`}</div></td>
+      <td class=${pro ? 'cur' : ''}><div class="popts">${opts.map(([v, price, per, m, tag]) => html`<button key=${v} class="popt ${mine === v ? 'on' : ''} ${tag ? 'best' : ''}" onClick=${() => mine !== v && start(v)} aria-pressed=${mine === v}>
+          <span class="pp num">${inrP(price)}<span class="faint"> / ${per}</span></span>
+          <span class="pm">${m > 1 ? `${inrP(Math.round(price / m))} a month · save ${inrP(PR.monthly * m - price)}` : 'cancel anytime'}</span>
+          ${mine === v ? html`<span class="pt ok">Your plan ✓</span>` : tag ? html`<span class="pt">${tag}</span>` : null}</button>`)}</div>
+        ${!pro && html`<span class="faint" style="font-size:11px">Tap a price to start · demo, no payment</span>`}</td></tr></thead>
     <tbody>${PLAN_ROWS.map(([f, a, b]) => html`<tr key=${f}><td>${f}</td><td class=${pro ? '' : 'cur'}>${cell(a)}</td><td class=${pro ? 'cur' : ''}>${cell(b)}</td></tr>`)}</tbody></table></div>`;
 }
 export const goPlans = () => { go('about'); const t = () => document.getElementById('plans')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(t, 120); setTimeout(t, 450); };
@@ -690,8 +687,6 @@ export function About() {
     <section class="section"><div class="section-head"><h2>How it works</h2><span class="faint" style="font-size:12px">Tap for an example</span></div>
       <div class="can">${stories.map(s => html`<${Story} key=${s.id} s=${s} tag=${tags[s.id]} hot=${hot[s.id]}/>`)}</div></section>
     <section class="section about-plans" id="plans"><div class="section-head"><h2>Plans and prices <${Info} k="plandemo"/></h2><${PlanSwitch}/></div>
-      <${PriceCards}/>
-      <h3 style="margin:18px 0 8px;font-size:15px">Free vs Pro, every feature</h3>
       <${PlansTable}/></section>
     <${ConnectCard}/>
   </div>`;
