@@ -212,6 +212,9 @@ test('parity: every MCP tool gives the same result as the website door', () => {
     c('get_basket_status', { basket_id: b.id });
     c('set_rule', { basket_id: b.id, rule_id: 'de', green: 0.45, red: 0.95 });
     c('toggle_rule', { basket_id: b.id, rule_id: 'peg', enabled: false });
+    c('get_rules', { basket_id: b.id });
+    c('apply_default_rules', { basket_id: b.id });
+    c('reset_rules', { basket_id: b.id });
     c('set_basket_rule', { basket_id: b.id, max_stage_weight: 45 });
     c('create_order', { basket_id: b.id, side: 'buy', amount: 50000 });
     c('get_alerts', {});
@@ -229,7 +232,7 @@ test('parity: every MCP tool gives the same result as the website door', () => {
     assert.deepEqual(a[t.name], b[t.name], t.name);
   }
 });
-function strip(x) { return JSON.parse(JSON.stringify(x, (k, v) => (['source', 'editedBy', 'createdAt', 'confirmedBy', 'activity', 'by', 'detail'].includes(k) ? undefined : v))); }
+function strip(x) { return JSON.parse(JSON.stringify(x, (k, v) => (['source', 'edited_by', 'editedBy', 'createdAt', 'confirmedBy', 'activity', 'by', 'detail'].includes(k) ? undefined : v))); }
 
 test('refill ladder holds cash and asks for new stocks when nothing fits', () => {
   const st = createState();
@@ -367,7 +370,12 @@ test('activity text uses singular for one stock', () => {
 test('rules can be edited per basket, as defaults, or everywhere (and with no baskets)', () => {
   const st = createState();
   // No baskets: toggling goes to the defaults instead of failing
-  let r = dispatch(st, 'toggle_rule', { rule_id: 'vol', enabled: false }, 'claude');
+  // On Free, Claude can read rules but editing them through Claude is Pro; the website switch stays free
+  let r = dispatch(st, 'get_rules', {}, 'claude');
+  assert.equal(r.ok, true); assert.equal(r.data.scope, 'defaults'); assert.equal(r.data.metrics.length, 13);
+  r = dispatch(st, 'toggle_rule', { rule_id: 'vol', enabled: false }, 'claude');
+  assert.equal(r.ok, false); assert.equal(r.error.code, 'pro_feature'); assert.match(r.error.free_alternative, /Default rules/);
+  r = dispatch(st, 'toggle_rule', { rule_id: 'vol', enabled: false }, 'you');
   assert.equal(r.ok, true); assert.equal(r.data.scope, 'defaults'); assert.equal(st.rules.metrics.find(x => x.id === 'vol').enabled, false);
   // Limits are Pro, with a helpful error
   r = dispatch(st, 'set_rule', { rule_id: 'de', green: 0.5, red: 1 }, 'claude');

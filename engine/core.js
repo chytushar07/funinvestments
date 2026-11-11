@@ -32,6 +32,7 @@ const FREE_ALTERNATIVE = {
   'more tracking baskets': 'On Free you have 1 tracking basket: add holdings to it instead.',
   'custom thresholds': 'On Free, create the basket with the default rules; turning rules on or off is free.',
   'edit thresholds': 'On Free, keep the default limits; you can still turn rules on or off.',
+  'Claude editing your rules': 'On Free the user turns rules on or off themselves in the website: Settings → Default rules, or a basket → ⚙ Edit rules. With Pro, Claude can change default and basket rules.',
   'event rules': 'Company-event rules need Pro; the 13 core rules work on Free.',
   'basket limits': 'On Free, basket limits stay at their defaults.',
   'what-if': 'Previewing rule changes needs Pro.',
@@ -718,6 +719,14 @@ const OPS = {
     return { basket: basketView(st, b) };
   },
   // Copy the default rules onto every basket (switches and limits of each rule; basket size limits stay).
+  // Read the default rules or one basket's rules (scope like set_rule).
+  get_rules(st, a) {
+    const scope = a.scope || (a.basket_id ? 'basket' : 'defaults');
+    const pick = rs => ({ metrics: rs.metrics.map(r => ({ id: r.id, label: r.label, long: r.long, unit: r.unit, better: r.dir, green: r.green, red: r.red, enabled: r.enabled, must_pass: !!r.critical, edited_by: r.source })), events: rs.events.map(r => ({ id: r.id, label: r.label, enabled: r.enabled })) });
+    if (scope === 'defaults') return { scope, note: 'New baskets start with these; they also rate stocks on Home and Explore.', ...pick(st.rules), can_edit_limits: isPro(st) };
+    const b = getBasket(st, a.basket_id);
+    return { scope: 'basket', basket: { id: b.id, name: b.name }, ...pick(b.rules), limits: b.limits, can_edit_limits: isPro(st) };
+  },
   apply_default_rules(st, a, actor) {
     const list = a.basket_id ? [getBasket(st, a.basket_id)] : st.baskets;
     for (const b of list) { b.rules = cloneRules(st.rules); b.editedBy = actor; b.updatedAt = st.clock; checkBasket(st, b, 'rules'); }
@@ -1118,6 +1127,8 @@ function dedupe(list) { const seen = new Set(); return list.filter(x => (seen.ha
 
 export const OP_NAMES = Object.keys(OPS);
 // Destructive or money-moving actions stay with the person, in the website.
+// Rule editing through Claude (default rules and basket rules) is a Pro feature. The website keeps free switches.
+export const CLAUDE_PRO_RULES = new Set(['set_rule', 'toggle_rule', 'reset_rules', 'apply_default_rules', 'set_basket_rule']);
 export const PERSON_ONLY = new Set(['confirm_order', 'set_plan', 'delete_basket', 'delete_candidate', 'delete_journal', 'clear_alerts']);
 
 export function dispatch(st, op, args = {}, actor = 'you') {
@@ -1127,6 +1138,7 @@ export function dispatch(st, op, args = {}, actor = 'you') {
   if (actor === 'claude') { st.lastClaudeCall = { op, at: st.clock, time: new Date().toISOString() }; st.claudeConnected = true; }
   if (actor === 'claude' && PERSON_ONLY.has(op)) { const res = { ok: false, error: { code: 'person_only', message: 'Only a person can do this, in the website.' } }; logActivity(st, op, args, res); return res; }
   try {
+    if (actor === 'claude' && CLAUDE_PRO_RULES.has(op) && !isPro(st)) throw proError('Claude editing your rules');
     const res = { ok: true, data: fn(st, args || {}, actor) };
     if (actor === 'claude' || USER_LOGGED.has(op)) logActivity(st, op, args, res, actor);
     return res;

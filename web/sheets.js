@@ -241,22 +241,51 @@ const SHEETS = {
     }, [g, rd]);
     useEffect(() => { if (!pro) read('track_event', { name: 'upgrade_moment_shown', props: { feature: 'edit thresholds' } }); }, []);
     if (!r) return null;
-    const lo0 = Math.min(r.good, r.bad), hi0 = Math.max(r.good, r.bad), step = (hi0 - lo0) > 50 ? 1 : (hi0 - lo0) > 5 ? 0.5 : 0.05;
-    // Snap the range to whole steps so the slider only lands on round values (no "60.2").
-    const lo = Math.floor(lo0 / step) * step, hi = Math.ceil(hi0 / step) * step;
-    const valid = r.dir === 'higher' ? g >= rd : g <= rd;
-    const unit = r.unit === '%' ? '%' : r.unit === '×' ? '×' : '';
-    return html`<div class="stack" style="gap:14px"><div class="row between"><h2>${r.long}</h2>${r.critical && html`<span class="tag claude">★ Must-pass</span>`}</div>
-      <span class="muted" style="font-size:13px">${def ? 'Default rule: new baskets start with it, and it rates stocks on Home and Explore.' : `Applies to ${b.name} only.`} <${Info} k=${r.id}/></span>
-      ${!pro && html`<div class="card row between" style="gap:10px;padding:10px 12px;border-color:color-mix(in oklab,var(--brand) 45%,var(--line))"><span style="font-size:13px"><b>🔒 Limits are a Pro feature.</b> On Free you can switch this rule on or off. In this demo, tap Pro on Home to try it.</span><button class="btn small primary" onClick=${() => go('home')}>Try Pro</button></div>`}
-      <div class="field"><label for="rs-g">Green ${r.dir === 'higher' ? 'at or above' : 'at or below'} <b class="num">${g}${unit}</b></label><input type="range" id="rs-g" min=${lo} max=${hi} step=${step} value=${g} disabled=${!pro} onInput=${e => setG(+Number(e.target.value).toFixed(2))}/></div>
-      <div class="field"><label for="rs-r">Red ${r.dir === 'higher' ? 'below' : 'above'} <b class="num">${rd}${unit}</b></label><input type="range" id="rs-r" min=${lo} max=${hi} step=${step} value=${rd} disabled=${!pro} onInput=${e => setRd(+Number(e.target.value).toFixed(2))}/></div>
-      ${!valid && html`<span class="down" style="font-size:13px">Green can't be ${r.dir === 'higher' ? 'below' : 'above'} red.</span>`}
-      ${pro ? (wi && valid ? html`<div class="card stack" style="gap:6px"><b>What if</b><span class="muted" style="font-size:13px">${wi.changes.length ? wi.changes.slice(0, 6).map(c => `${shortName(c.name)} ${STATUS[c.from][1]} → ${STATUS[c.to][1]}${c.inBasket ? ' (in basket)' : ''}`).join(' · ') : 'No status changes today'}</span>
-          <span class="faint" style="font-size:12px">Past test, good exit calls: ${wi.backtest.before.removalsRight} of ${wi.backtest.before.removalsTotal} → ${wi.backtest.after.removalsRight} of ${wi.backtest.after.removalsTotal}</span></div>` : null)
-        : null}
-      ${def && pro && store.S.baskets.length > 0 && html`<label class="row" style="gap:10px;font-size:13.5px;cursor:pointer"><input type="checkbox" checked=${all} onChange=${e => setAll(e.target.checked)}/> Also apply to all ${store.S.baskets.length} of my baskets</label>`}
-      <div class="sticky-cta"><button class="btn primary block" disabled=${!pro || !valid || (g === r.green && rd === r.red)} onClick=${async () => { const args = def ? { scope: all ? 'all' : 'defaults', rule_id: r.id, green: g, red: rd } : { basket_id: b.id, rule_id: r.id, green: g, red: rd }; const x = await act('set_rule', args, { quiet: true }); if (x?.ok) { closeSheet(); await refresh(); toast(def ? `Saved to ${x.data.applied_to}` : `Saved · ${x.data.changed.length} status change${x.data.changed.length === 1 ? '' : 's'}`); } }}>Save</button></div></div>`;
+    // A step that suits the rule's scale: whole numbers for ₹ cr / % rules, finer for ratios.
+    const span = Math.abs(r.green - r.red);
+    const step = span >= 5 ? 1 : span >= 1 ? 0.5 : span >= 0.4 ? 0.1 : 0.05;
+    const dec = step < 0.1 ? 2 : step < 1 ? 1 : 0;
+    const fix = v => +(+v).toFixed(dec);
+    const lo = Math.min(r.good, r.bad), hi = Math.max(r.good, r.bad);
+    const clamp = v => fix(Math.min(hi, Math.max(lo, v)));
+    const up = r.dir === 'higher'; // higher numbers are safer
+    const valid = up ? g >= rd : g <= rd;
+    const u = r.unit === '₹ cr' ? ' cr' : r.unit === 'yrs' ? ' yrs' : r.unit === 'pts' ? ' pts' : r.unit;
+    const pre = r.unit === '₹ cr' ? '₹' : '';
+    const val = v => `${pre}${v}${u}`;
+    const goodTxt = `${up ? 'at or above' : 'at or below'} ${val(g)}`, badTxt = `${up ? 'below' : 'above'} ${val(rd)}`;
+    const shift = k => { const d = (up ? 1 : -1) * k * step * 2; setG(clamp(g + d)); setRd(clamp(rd + d)); };
+    const changed = g !== r.green || rd !== r.red;
+    // Coloured scale: where green, amber and red sit between the rule's extremes.
+    // Zoom the scale to the area around the limits so all three colours are visible.
+    const sp = Math.max(Math.abs(g - rd), Math.abs(r.green - r.red), step);
+    const vlo = Math.max(lo, Math.min(g, rd) - sp * 0.8), vhi = Math.min(hi, Math.max(g, rd) + sp * 0.8);
+    const pos = v => Math.min(100, Math.max(0, ((v - vlo) / (vhi - vlo || 1)) * 100));
+    const pg = pos(g), pr = pos(rd);
+    const band = up
+      ? `linear-gradient(90deg, var(--down) 0 ${pr}%, #E7A93B ${pr}% ${pg}%, var(--up) ${pg}% 100%)`
+      : `linear-gradient(90deg, var(--up) 0 ${pg}%, #E7A93B ${pg}% ${pr}%, var(--down) ${pr}% 100%)`;
+    const Num = ({ id, v, set, label }) => html`<div class="numstep" role="group" aria-label=${label}>
+      <button type="button" aria-label=${`${label}: less`} onClick=${() => set(clamp(v - step))}>−</button>
+      <input id=${id} class="num" inputmode="decimal" value=${v} aria-label=${label} onChange=${e => { const n = parseFloat(e.target.value); if (!isNaN(n)) set(clamp(n)); else e.target.value = v; }}/>
+      <button type="button" aria-label=${`${label}: more`} onClick=${() => set(clamp(v + step))}>+</button></div>`;
+    return html`<div class="stack rulesheet" style="gap:14px"><div class="row between" style="gap:10px"><h2>${r.long}</h2>${r.critical && html`<span class="tag claude" style="flex:none">★ Must-pass</span>`}</div>
+      <span class="muted" style="font-size:13px">${def ? 'Default rule: new baskets start with it, and it rates stocks on Home and Explore.' : `This basket only: ${b.name}.`} <${Info} k=${r.id}/></span>
+      <div class="rband"><div class="rbar" style=${`background:${band}`}></div>
+        <div class="rlegend"><span><i class="g"></i>Good ${goodTxt}</span><span><i class="r"></i>Bad ${badTxt}</span></div></div>
+      ${pro ? html`
+        <div class="rrow"><div><b>Good (green)</b><span class="muted">${up ? 'at or above' : 'at or below'}</span></div><${Num} id="rs-g" v=${g} set=${setG} label="Good limit"/></div>
+        <div class="rrow"><div><b>Bad (red)</b><span class="muted">${up ? 'below' : 'above'}</span></div><${Num} id="rs-r" v=${rd} set=${setRd} label="Bad limit"/></div>
+        <div class="chips"><button class="chip" onClick=${() => shift(1)}>Stricter</button><button class="chip" onClick=${() => shift(-1)}>Looser</button>${changed && html`<button class="chip" onClick=${() => { setG(r.green); setRd(r.red); }}>Undo</button>`}</div>
+        ${!valid && html`<span class="down" style="font-size:13px">Good can't be ${up ? 'below' : 'above'} bad.</span>`}
+        ${!def && wi && valid ? html`<div class="card stack" style="gap:6px"><b>What changes</b><span class="muted" style="font-size:13px">${wi.changes.length ? wi.changes.slice(0, 6).map(c => `${shortName(c.name)} ${STATUS[c.from][1]} → ${STATUS[c.to][1]}${c.inBasket ? ' (in basket)' : ''}`).join(' · ') : 'No rating changes today'}</span>
+          <span class="faint" style="font-size:12px">Past test, good exit calls: ${wi.backtest.before.removalsRight} of ${wi.backtest.before.removalsTotal} → ${wi.backtest.after.removalsRight} of ${wi.backtest.after.removalsTotal}</span></div>` : null}
+        ${def && store.S.baskets.length > 0 && html`<label class="row" style="gap:10px;font-size:13.5px;cursor:pointer"><input type="checkbox" checked=${all} onChange=${e => setAll(e.target.checked)}/> Also apply to all ${store.S.baskets.length} of my baskets</label>`}
+        <div class="sticky-cta"><button class="btn primary block" disabled=${!valid || !changed} onClick=${async () => { const args = def ? { scope: all ? 'all' : 'defaults', rule_id: r.id, green: g, red: rd } : { basket_id: b.id, rule_id: r.id, green: g, red: rd }; const x = await act('set_rule', args, { quiet: true }); if (x?.ok) { closeSheet(); await refresh(); toast(def ? `Saved to ${x.data.applied_to}` : `Saved · ${x.data.changed.length} rating change${x.data.changed.length === 1 ? '' : 's'}`); } }}>${changed ? 'Save' : 'Change a limit to save'}</button></div>`
+      : html`<div class="card lockcard"><b>🔒 Change limits with Pro</b>
+          <span class="muted">On Free every basket uses these limits. You can still turn this rule on or off with its switch in the list. Pro lets you set your own limits, and lets Claude change them for you.</span>
+          <div class="row" style="gap:8px;margin-top:4px"><button class="btn small primary" onClick=${() => go('home')}>Try Pro (demo)</button><button class="btn small ghost" onClick=${() => go('pricing')}>See plans</button></div></div>`}
+    </div>`;
   },
 
   // ---------- basket menu / edit / delete ----------

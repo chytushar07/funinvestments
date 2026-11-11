@@ -442,3 +442,19 @@ a.btn.primary { color: var(--brand-ink); }
 .editrules { flex: none; white-space: nowrap; }
 .rulehelp { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-color: color-mix(in oklab, var(--brand) 40%, var(--line)); }
 .rulehelp .muted { font-size: 13px; line-height: 1.45; }
+
+/* Rule sheet: coloured scale, big − / + steppers, Free lock card */
+.rband { display: flex; flex-direction: column; gap: 8px; }
+.rbar { height: 12px; border-radius: 999px; }
+.rlegend { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; font-weight: 700; }
+.rlegend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.rlegend i.g { background: var(--up); } .rlegend i.r { background: var(--down); }
+.rrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--card-2); }
+.rrow > div:first-child { display: flex; flex-direction: column; min-width: 0; }
+.rrow .muted { font-size: 12.5px; }
+.numstep { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--card); flex: none; }
+.numstep button { border: 0; background: transparent; color: var(--fg); width: 48px; height: 48px; font-size: 24px; font-weight: 800; touch-action: manipulation; }
+.numstep button:active { background: var(--brand-soft); }
+.numstep input { width: 72px; height: 48px; border: 0; border-left: 1px solid var(--line); border-right: 1px solid var(--line); background: transparent; color: var(--fg); text-align: center; font-size: 18px; font-weight: 800; }
+.lockcard { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-color: color-mix(in oklab, var(--brand) 45%, var(--line)); }
+.lockcard .muted { font-size: 13px; line-height: 1.45; }

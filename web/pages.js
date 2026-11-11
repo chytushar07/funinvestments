@@ -535,7 +535,7 @@ export function Pricing() {
       <div class="plan pro"><div class="row between"><b>Pro</b><span class="tag unl">∞ Unlimited baskets</span></div>
         <div><span class="big" style="font-size:28px">${inr(price)}</span><span class="muted"> / ${per}</span></div>
         ${months > 1 && html`<div class="faint" style="font-size:12.5px;margin-top:-6px">${inr(perMonth)} a month, billed ${label.toLowerCase()}</div>`}
-        <ul><li><b>Unlimited baskets</b> · 12 stocks each</li><li>Change any rule's limits</li><li>Company events + basket limits</li><li>Daily checks</li><li>Unlimited news flags</li><li>Full past test 2018–2025</li><li>Preview a rule change first</li><li>See if your overrides helped</li><li>Browser alerts for every change</li><li>Share your rule results</li></ul>
+        <ul><li><b>Unlimited baskets</b> · 12 stocks each</li><li>Change any rule's limits</li><li>Claude edits your rules for you</li><li>Company events + basket limits</li><li>Daily checks</li><li>Unlimited news flags</li><li>Full past test 2018–2025</li><li>Preview a rule change first</li><li>See if your overrides helped</li><li>Browser alerts for every change</li><li>Share your rule results</li></ul>
         ${pro ? html`<button class="btn block" disabled>You're on Pro${S.billing ? ` · ${OPT[S.billing]?.[0] || ''}` : ''}</button>` : html`<button class="btn primary block" onClick=${async () => { const r = await act('set_plan', { plan: 'pro', billing }, { ok: `Pro is on (${label.toLowerCase()}) · mock checkout` }); if (r?.ok) history.back(); }}>Start Pro · ${inr(price)}</button>`}</div>
     </div>
     <div class="card" style="margin-top:14px;padding:14px 16px"><b style="font-size:14px">One price, every basket</b>
@@ -624,7 +624,7 @@ export function PlanSwitch({ big, home, rail }) {
 // The cards and their expandable examples live in stories.js.
 const PLAN_ROWS = [
   ['Baskets', '1', '∞ Unlimited'], ['Stocks per basket', '8', '12'], ['Tracking baskets (real shares)', '1', 'Unlimited'],
-  ['13 safety rules', true, true], ['Change any rule\'s limits', false, true], ['Company events (auditor quits, rating cuts…)', false, true],
+  ['13 safety rules', true, true], ['Change any rule\'s limits', false, true], ['Claude edits your rules (default + basket)', false, true], ['Company events (auditor quits, rating cuts…)', false, true],
   ['Rule checks', 'Weekly', 'Daily'], ['Urgent alerts the moment a must-pass rule breaks', true, true], ['News flags', '3 a month', 'Unlimited'],
   ['Past test', 'Latest year', '2018–2025'], ['Preview a rule change first', false, true], ['See if your overrides helped', false, true],
   ['Browser alerts for every change', false, true], ['Share your rule results', false, true], ['Connect Claude', true, true], ['Practice money', '₹1,00,000', '₹1,00,000'],
