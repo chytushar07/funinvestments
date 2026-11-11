@@ -549,6 +549,7 @@ export function Account() {
       <div class="li"><span class="grow"><span class="t">Email</span><span class="s">${pro ? 'Weekly digest' : html`<span class="lock">Pro</span>`}</span></span><${Switch} id="nt-email" checked=${S.notif.email} label="Email" onChange=${v => act('set_notif', { email: v })}/></div></div></section>
     <section class="section"><h2>Demo</h2><div class="card stack" style="gap:10px">
       <dl class="kv"><dt>Demo date <${Info} k="democlock"/></dt><dd>${dateLabel(S.clock)}</dd><dt>Next results</dt><dd>${S.nextFiling ? `${S.nextFiling.symbol} · ${short(S.nextFiling.date)}` : '—'}</dd><dt>Prices</dt><dd>Mock data</dd><dt>Saved</dt><dd>${server ? 'Online' : 'In this browser'}</dd></dl>
+      ${server && api.getSpace() === 'private' && html`<div class="row between"><span>Your private space <${Info} k="privatespace"/></span><button class="btn small ghost" onClick=${() => copy(location.origin + location.pathname + '#key=' + S.user.apiKey)}>Copy link</button></div>`}
       <button class="btn small ghost danger" style="align-self:flex-start" onClick=${() => confirmDialog({ title: 'Start the demo over?', body: 'This erases every basket, order, alert, news flag and the activity log, and puts back ₹1,00,000 of practice money. It can\'t be undone.', confirm: 'Reset demo', danger: true, onConfirm: async () => { const r = await act('reset', {}, { ok: 'Demo reset · fresh start' }); if (r?.ok) go('home'); } })}>Reset demo</button></div></section>
   </div>`;
 }

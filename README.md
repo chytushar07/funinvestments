@@ -85,8 +85,16 @@ Every push to `main` redeploys automatically.
 2. **Name:** `FunInvestments`. **Remote MCP server URL:** copy it from the website's **Settings → Connect Claude**. Click **Add**.
 3. Make sure FunInvestments is switched on, then start a chat: "What's pending in FunInvestments?"
 
-**Secret key.** The connector link contains a key. If you don't set one, the app makes one on first
-start and saves it. To choose your own: Worker → Settings → Variables and Secrets → add secret
+**Private spaces.** On Cloudflare every visitor gets their own private space: the first visit creates a
+signed key that is remembered in that browser, with its own baskets, orders, activity and connector link.
+Visitors never see each other's data, and Reset only erases your own. **Settings → Your private space →
+Copy link** opens your space on another device. Anyone who holds a space's link can open and change it,
+so share it with no one. Keys are signed with a secret the app makes on first start; to choose your own,
+add the secret `FI_SECRET` (changing it makes all existing private spaces unreachable).
+
+**The original owner key.** The connector link you may already be using (the one with `FI_API_KEY`, or the
+key the app generated) still opens the original space, so existing connectors keep working. To open that
+space in a browser, visit `https://<your-app>/#key=<that key>`. To choose the key yourself, add the secret
 `FI_API_KEY`.
 
 **From the command line instead:** `npm i -g wrangler && wrangler login && npm run cf:deploy`.
@@ -99,6 +107,7 @@ Local test: `npx wrangler dev` (uses `wrangler.jsonc`).
 server. The `get_activity` tool lets a new chat pick up where the last one stopped, and the website
 shows Claude's activity and your next step on Home and in Activity.
 
-**Security (prototype):** the website has no login. Anyone with its address can use it and see the
-connector URL in Settings. Share the address only with people you trust, or add your host's password
-protection (Cloudflare Access works). One shared state for everyone (single-user prototype).
+**Security (prototype):** there is no sign-in. A private space is protected only by its secret link, like
+an unlisted document: anyone who has it can use that space. Spaces are never deleted automatically, and
+there is no rate limit on creating them. Everything is practice money and mock data. The Node server
+(`npm start`, Render) is still one shared state for everyone: it is a single-user prototype.
