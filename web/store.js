@@ -4,12 +4,19 @@ import * as api from './client.js';
 export const store = { S: null, rev: 0, ui: { sheet: null, toast: null }, render: null, netError: null };
 const emit = () => store.render?.(n => n + 1);
 
+let seq = 0;
+// Fetch the snapshot. Only the newest request may land, so a slow background poll can never
+// overwrite the fresher state that followed an action. Resolves true when the snapshot is current.
 export async function refresh() {
+  const mine = ++seq;
+  let done = false;
   try {
     const r = await api.call('get_state');
-    if (r.ok) { store.S = r.data; store.rev++; store.netError = null; }
-  } catch (e) { store.netError = e.message; }
+    if (mine !== seq) return true;
+    if (r.ok) { store.S = r.data; store.rev++; store.netError = null; done = true; }
+  } catch (e) { if (mine !== seq) return false; store.netError = e.message; }
   emit();
+  return done;
 }
 
 let busy = false;

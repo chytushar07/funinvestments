@@ -1,0 +1,69 @@
+/* Home page + top bar. Loaded after app.css; only refines existing components. */
+
+/* ---------- Demo date (top bar) ----------
+   A labelled date you can tap for an explanation, plus two jump buttons.
+   Phone: the label sits on the pill's border like a field label (costs no width), buttons read "+1d" "+1q".
+   Wider: label inline, buttons read "+1 day" "+1 quarter". */
+.topbar { --g: 8px; gap: var(--g); }
+.topbar .spacer { margin-left: calc(-1 * var(--g)); } /* the empty spacer must not cost a second gap */
+.topbar .brand { min-width: 0; padding: 0; font-size: clamp(13px, 3.6vw, 16px); gap: 7px; }
+.topbar .logo { width: 26px; height: 26px; }
+.topbar .brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clock { position: relative; flex: none; padding: 4px; gap: 4px; }
+.clock .clock-date { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 4px 5px 8px; background: none; color: inherit; line-height: 1.1; }
+.clock .clock-date .num { font-size: 12.5px; font-weight: 700; }
+.clock-k { position: absolute; top: -7px; left: 11px; padding: 0 4px; background: var(--bg); border-radius: 4px; font-size: 8.5px; line-height: 12px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); pointer-events: none; }
+.clock .clock-step { padding: 6px 8px; line-height: 1.1; color: var(--fg); transition: background .15s, opacity .15s; }
+.clock .u-l { display: none; }
+.clock button:active { background: var(--line); }
+.clock button:disabled { opacity: .5; cursor: progress; }
+.clock .clock-step.busy { opacity: 1; background: var(--brand-soft); color: var(--brand); }
+@media (max-width: 372px) { .topbar { --g: 6px; } .topbar .brand { gap: 6px; } .topbar .logo { width: 24px; height: 24px; } .clock .clock-step { padding: 6px 7px; } }
+@media (min-width: 560px) {
+  .topbar { --g: 10px; }
+  .topbar .brand { gap: 8px; }
+  .topbar .logo { width: 28px; height: 28px; }
+  .clock { padding-left: 6px; }
+  .clock .clock-date { padding: 5px 6px; }
+  .clock-k { position: static; padding: 0; background: none; font-size: 10px; line-height: inherit; }
+  .clock .u-s { display: none; }
+  .clock .u-l { display: inline; }
+  .clock .clock-step { padding: 6px 11px; }
+}
+
+/* ---------- Account icon menu: Settings, Refresh, Reset demo ---------- */
+.topmenu { position: relative; flex: none; }
+.topmenu-pop { position: absolute; z-index: 30; right: 0; top: calc(100% + 8px); min-width: 176px; display: flex; flex-direction: column; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+.topmenu-pop .menuitem { padding: 11px 12px; font-size: 14.5px; }
+
+/* ---------- Plan switch ----------
+   Phone: one slim line at the top of Home. Desktop: it lives in the left rail (every page), so Home doesn't repeat it. */
+.plan-switch.home { margin-top: 0; gap: 8px; flex-wrap: nowrap; }
+.plan-switch.home .linkbtn { margin-left: auto; padding: 0; }
+.plan-switch.in-rail { flex-wrap: nowrap; justify-content: space-between; gap: 8px; margin: 0; padding: 0 2px 0 12px; }
+.plan-switch.in-rail .linkbtn { display: none; }
+@media (min-width: 1000px) { .plan-switch.home { display: none; } }
+
+/* ---------- Your next step: one tight card ---------- */
+.nextstep { margin-top: 10px; padding: 10px 12px 11px 14px; flex-direction: row; align-items: center; gap: 12px; }
+@media (min-width: 1000px) { .nextstep { margin-top: 2px; } }
+.ns-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ns-main .row { justify-content: flex-start; gap: 8px; }
+.ns-main .eyebrow { font-size: 10.5px; }
+.ns-main .linkbtn { font-size: 12px; padding: 0; line-height: 1.2; }
+.ns-main b { font-size: 14.5px; line-height: 1.3; overflow-wrap: anywhere; }
+.ns-d { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nextstep + .searchbar, .plan-switch.home + .searchbar, .tour-invite + .searchbar { margin-top: 10px; }
+
+/* ---------- Activity rows ---------- */
+.recent { gap: 8px; }
+.recent .card.list { padding: 0 14px; }
+.li.act-compact { padding: 9px 0; gap: 10px; }
+.li.act-compact .t { font-size: 13.5px; font-weight: 600; line-height: 1.35; }
+.li.act-compact .s { font-size: 12px; }
+.li.act-compact .act-ic { width: 22px; height: 22px; border-radius: 7px; font-size: 11px; }
+/* Look-ups change nothing: one quiet line, no badge, no tag. */
+.li.act-read { padding: 8px 0; gap: 12px; font-size: 12.5px; color: var(--muted); }
+.li.act-read .faint { font-size: 12px; white-space: nowrap; }
+.act-ic.read { background: none; color: var(--faint); height: 16px; }
+.act-ic.read svg { width: 13px; height: 13px; }

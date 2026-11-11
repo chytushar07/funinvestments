@@ -155,7 +155,7 @@ Events are stored in `state.events` and printed to the console in the prototype.
 3. Rules apply to all of a user's baskets in v1 (one rule set per user).
 4. Anti-churn: a Pass stock drops to Watch only at 5+ points (buffer); daily metrics (traded value, volatility) need 2 consecutive breaching checks; a removed stock can't be refilled for 90 days.
 5. Event rules (Pro): surveillance listing and auditor exit = critical red; late results and rating downgrade = red (2 points).
-6. News flags: a "worse" flag on a critical metric drafts a sell marked "News only — unconfirmed". The next filing confirms (status recomputes) or clears (draft cancelled).
+6. News flags: a "worse" flag on a critical metric drafts a sell marked "Based on news, not yet in results". The next filing confirms (status recomputes) or clears (draft cancelled).
 7. Refill ladder: Pass by fewest points → Watch by fewest points (capped 10%) → hold cash + "Ask Claude for candidates". Stage cap checked at every step.
 8. Fills: last close ± 0.1%, max 5% of the stock's daily traded value. Corporate actions ignored.
 9. Free: 1 basket (≤ 8 stocks) + 1 Tracking basket, default thresholds, weekly checks, critical alerts instant, ₹1,00,000 paper money, 3 news flags/month, 2025 scorecard summary. Pro: everything else.

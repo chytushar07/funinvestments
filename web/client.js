@@ -58,3 +58,7 @@ export async function changedSince(knownRev) {
   try { const r = await fetch('api/rev', { cache: 'no-store' }); const j = await r.json(); return j.rev !== knownRev ? j.rev : false; } catch { return false; }
 }
 export const currentRev = () => rev;
+// Standalone mode: another tab of this browser changed the saved state. Load it so this tab never shows (or overwrites it with) old data.
+export function onExternalChange(cb) {
+  window.addEventListener('storage', e => { if (mode === 'local' && e.key === KEY) { st = loadLocal(); rev++; cb(); } });
+}

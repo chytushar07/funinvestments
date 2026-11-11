@@ -190,7 +190,7 @@ function ensureRefill(st, b) {
   if (p.picks.length || p.short) {
     addAlert(st, {
       basketId: b.id, type: 'refill',
-      text: p.picks.length ? `${b.name} has ${b.symbols.length} stocks (needs ${b.limits.minStocks}) · replacement ${invested(b) ? 'ready to review' : 'added'}` : `${b.name} has ${b.symbols.length} stocks (needs ${b.limits.minStocks}) · find new ones`,
+      text: p.picks.length ? `${b.name} has ${b.symbols.length} stock${b.symbols.length === 1 ? '' : 's'} (needs ${b.limits.minStocks}) · replacement ${invested(b) ? 'ready to review' : 'added'}` : `${b.name} has ${b.symbols.length} stock${b.symbols.length === 1 ? '' : 's'} (needs ${b.limits.minStocks}) · find new ones`,
       why: [...why, ...(p.short ? [`${p.short} slot(s) kept as cash for now`] : [])],
       action: orders.length ? { kind: 'orders', ids: orders.map(o => o.id) } : p.short ? { kind: 'claude', prompt: p.prompt } : null,
     });
@@ -960,7 +960,7 @@ const OPS = {
 
   // ---- Activity & to-dos (lets a new Claude chat pick up where the last one stopped) ----
   get_activity(st, a) {
-    return { activity: (st.activity || []).slice(0, a.limit || 30), todo: todoList(st), asOf: st.clock };
+    return { activity: activityView(st, (st.activity || []).slice(0, a.limit || 30)), todo: todoList(st), asOf: st.clock };
   },
 
   // ---- App state & settings ----
@@ -982,7 +982,7 @@ const OPS = {
       flagsThisMonth: st.flags.filter(f => monthKey(f.date) === monthKey(st.clock) && f.status !== 'withdrawn').length,
       nextFiling: st.filings.find(f => !f.applied) || null, notif: st.notif, eventsCount: st.events.length,
       onboarded: st.onboarded, claudeConnected: st.claudeConnected, lastClaudeCall: st.lastClaudeCall,
-      activity: (st.activity || []).slice(0, 60), todo: todoList(st),
+      activity: activityView(st, recentActivity(st)), todo: todoList(st),
       provider: 'Mock provider (seeded from NSE closes, 9 Nov 2026)', stages: STAGES, themes: THEMES, defaultLimits: DEFAULT_LIMITS,
     };
   },
@@ -1020,18 +1020,24 @@ const OPS = {
   },
 };
 
+// What the user should do next, most urgent first: orders with a sell the rules or news asked for,
+// then other orders, urgent alerts that have no order to confirm, baskets short of stocks,
+// baskets not invested yet, and last the news flags that only wait for results.
 function todoList(st) {
   const out = [];
   const bname = id => st.baskets.find(b => b.id === id)?.name || 'a basket';
   const groups = {};
   for (const o of st.orders.filter(o => o.status === 'pending')) (groups[o.basketId] ||= []).push(o);
   for (const [bid, os] of Object.entries(groups)) {
-    const by = os.some(o => o.source === 'claude') ? 'Claude' : os.some(o => o.source === 'rules') ? 'the rules' : 'you';
+    const who = [os.some(o => o.source === 'claude') && 'Claude', os.some(o => o.source === 'rules') && 'the rules', os.some(o => o.source === 'you') && 'you'].filter(Boolean);
+    const by = who[0] || 'you';
     const sells = os.filter(o => o.side === 'sell').length, buys = os.length - sells;
-    out.push({ kind: 'orders', priority: 1, basketId: bid, ids: os.map(o => o.id), by,
-      text: `Confirm ${os.length} order${os.length > 1 ? 's' : ''} in ${bname(bid)}`, detail: `${[buys && `${buys} buy`, sells && `${sells} sell`].filter(Boolean).join(', ')} · prepared by ${by}` });
+    const urgentSell = os.some(o => o.side === 'sell' && (o.source === 'rules' || o.tag === 'rules' || o.tag === 'news_only'));
+    out.push({ kind: 'orders', priority: urgentSell ? 0 : 1, basketId: bid, ids: os.map(o => o.id), by,
+      text: `Confirm ${os.length} order${os.length > 1 ? 's' : ''} in ${bname(bid)}`, detail: `${[buys && `${buys} buy`, sells && `${sells} sell`].filter(Boolean).join(', ')} · prepared by ${who.length > 1 ? `${who.slice(0, -1).join(', ')} and ${who.at(-1)}` : by}` });
   }
-  const urgent = st.alerts.filter(a => a.critical && !a.read);
+  // An urgent alert that came with an order is covered by that order (above) while it waits, and is settled once the order is confirmed or cancelled.
+  const urgent = st.alerts.filter(a => a.critical && !a.read && a.action?.kind !== 'orders');
   if (urgent.length) out.push({ kind: 'alerts', priority: 2, text: `Read ${urgent.length} urgent alert${urgent.length > 1 ? 's' : ''}`, detail: urgent[0].text });
   for (const b of st.baskets) if (b.kind === 'model' && b.symbols.length < b.limits.minStocks && !groups[b.id]) out.push({ kind: 'basket', priority: 3, basketId: b.id, text: `${b.name} needs ${b.limits.minStocks - b.symbols.length} more stock${b.limits.minStocks - b.symbols.length > 1 ? 's' : ''}`, detail: 'Add stocks or ask Claude to find some' });
   for (const b of st.baskets) if (b.kind === 'model' && !invested(b) && !groups[b.id] && b.symbols.length >= b.limits.minStocks) out.push({ kind: 'invest', priority: 4, basketId: b.id, text: `Invest in ${b.name}`, detail: 'Not invested yet' });
@@ -1041,22 +1047,40 @@ function todoList(st) {
 }
 
 const READ_LABEL = { get_universe: 'Looked through the stock list', get_basket_status: 'Checked basket status', get_alerts: 'Read your alerts', get_refill_plan: 'Checked replacement options', get_rule_scorecard: 'Read the past test', get_activity: 'Caught up on recent activity' };
+const ids = os => (os || []).map(o => o.id);
 function activitySummary(st, op, a, res) {
   const d = res.ok ? res.data : null;
   const bn = id => st.baskets.find(b => b.id === id)?.name || (st.baskets.length === 1 ? st.baskets[0].name : 'basket');
   if (!res.ok) return { text: `Tried to ${op.replace(/_/g, ' ')}: ${res.error.message}`, kind: 'error' };
   switch (op) {
-    case 'create_basket': return { text: `Created basket "${d.basket.name}" with ${d.basket.count} stocks${d.skipped.length ? ` (${d.skipped.length} skipped: rules, limits or plan)` : ''}`, kind: 'change', basketId: d.basket.id };
+    case 'create_basket': return { text: `Created basket "${d.basket.name}" with ${d.basket.count} stock${d.basket.count === 1 ? '' : 's'}${d.skipped.length ? ` (${d.skipped.length} skipped: rules, limits or plan)` : ''}`, kind: 'change', basketId: d.basket.id };
     case 'update_basket': return { text: `Edited basket "${d.basket.name}"`, kind: 'change', basketId: d.basket.id };
     case 'add_stock': return { text: `Added ${st.universe[upper(a.symbol)]?.name || a.symbol} to "${d.basket.name}"`, kind: 'change', basketId: d.basket.id };
-    case 'remove_stock': return d.orders ? { text: `Prepared a sale of ${st.universe[upper(a.symbol)]?.name || a.symbol}`, kind: 'needs_you' } : { text: `Removed ${st.universe[upper(a.symbol)]?.name || a.symbol} from "${d.basket.name}"`, kind: 'change' };
-    case 'exit_basket': return { text: d.orders.length ? `Prepared exit of "${bn(a.basket_id)}": ${d.orders.length} sell orders` : `Exit of "${bn(a.basket_id)}": nothing to sell`, kind: d.orders.length ? 'needs_you' : 'change' };
-    case 'create_order': return { text: `Prepared ${d.orders.length} ${d.orders[0]?.side || ''} order${d.orders.length > 1 ? 's' : ''} for "${bn(d.orders[0]?.basketId)}" (about ${fmtINR(d.orders.reduce((t, o) => t + o.estValue, 0))})`, kind: 'needs_you', basketId: d.orders[0]?.basketId };
-    case 'add_news_flag': return { text: `Flagged news on ${d.flag.name}: ${d.flag.metricLabel} likely ${d.flag.impact}${d.drafted_orders.length ? ' · sell prepared' : ''}`, kind: d.drafted_orders.length ? 'needs_you' : 'change' };
+    case 'remove_stock': return d.orders ? { text: `Prepared a sale of ${st.universe[upper(a.symbol)]?.name || a.symbol}`, kind: 'needs_you', orderIds: ids(d.orders) } : { text: `Removed ${st.universe[upper(a.symbol)]?.name || a.symbol} from "${d.basket.name}"`, kind: 'change' };
+    case 'exit_basket': return { text: d.orders.length ? `Prepared exit of "${bn(a.basket_id)}": ${d.orders.length} sell orders` : `Exit of "${bn(a.basket_id)}": nothing to sell`, kind: d.orders.length ? 'needs_you' : 'change', orderIds: ids(d.orders) };
+    case 'create_order': return { text: `Prepared ${d.orders.length} ${d.orders[0]?.side || ''} order${d.orders.length > 1 ? 's' : ''} for "${bn(d.orders[0]?.basketId)}" (about ${fmtINR(d.orders.reduce((t, o) => t + o.estValue, 0))})`, kind: 'needs_you', basketId: d.orders[0]?.basketId, orderIds: ids(d.orders) };
+    case 'add_news_flag': return { text: `Flagged news on ${d.flag.name}: ${d.flag.metricLabel} likely ${d.flag.impact}${d.drafted_orders.length ? ' · sell prepared' : ''}`, kind: d.drafted_orders.length ? 'needs_you' : 'change', orderIds: ids(d.drafted_orders) };
     case 'set_rule': return { text: `Changed "${d.rule.label}" limits in "${bn(a.basket_id)}"`, kind: 'change' };
     case 'toggle_rule': return { text: `Turned "${d.rule.label}" ${d.rule.enabled ? 'on' : 'off'} in "${bn(a.basket_id)}"`, kind: 'change' };
     case 'set_basket_rule': return { text: `Changed basket limits of "${d.basket.name}"`, kind: 'change' };
     case 'add_candidate': return { text: `Added ${d.stock.name} (${d.stock.symbol}) to the stock list`, kind: 'change' };
+    // ---- things only the person does in the website ----
+    case 'confirm_order': {
+      if (!d.filled.length) return null;
+      const buys = d.filled.filter(o => o.side === 'buy'), sells = d.filled.filter(o => o.side === 'sell');
+      const part = (os, verb) => os.length && `${verb} ${os.length === 1 ? os[0].name : `${os.length} stocks`} (${fmtINR(os.reduce((t, o) => t + (o.fill?.value ?? o.estValue), 0))})`;
+      const where = [...new Set(d.filled.map(o => o.basketId))];
+      return { text: d.exits.length ? `Exited "${d.exits[0].name}": ${fmtINR(d.exits[0].returnedCash)} back as cash` : `${[part(buys, 'Bought'), part(sells, 'Sold')].filter(Boolean).join(', ')}${where.length === 1 ? ` in "${bn(where[0])}"` : ''}`, kind: 'change', basketId: where[0] };
+    }
+    case 'cancel_order': return { text: d.order.side === 'sell' && (d.order.source === 'rules' || d.order.tag === 'news_only' || d.order.tag === 'rules') ? `Kept ${d.order.name} anyway` : d.order.source === 'rules' ? `Skipped the suggested ${d.order.side} of ${d.order.name}` : `Cancelled the ${d.order.side} order for ${d.order.name}`, kind: 'change', basketId: d.order.basketId };
+    case 'delete_basket': return { text: `Deleted basket "${d.name || a.name || 'basket'}"`, kind: 'change' };
+    case 'duplicate_basket': return { text: `Copied a basket as "${d.basket.name}"`, kind: 'change', basketId: d.basket.id };
+    case 'reset_rules': return { text: `Reset the rules of "${bn(a.basket_id)}" to default`, kind: 'change' };
+    case 'delete_news_flag': return { text: 'Removed a news flag', kind: 'change' };
+    case 'advance_day': case 'advance_quarter': {
+      const f = new Set(d.filings.map(x => x.symbol)).size, c = d.changes.length; // a tick that changed nothing in the user's baskets is not news
+      return c ? { text: `Rules check: ${c} status change${c === 1 ? '' : 's'} in your baskets${f ? ` · new results for ${f} compan${f === 1 ? 'y' : 'ies'}` : ''}`, kind: 'change', actor: 'rules' } : null;
+    }
     default: return { text: READ_LABEL[op] || op.replace(/_/g, ' '), kind: 'read' };
   }
 }
@@ -1075,11 +1099,12 @@ export const PERSON_ONLY = new Set(['confirm_order', 'set_plan', 'delete_basket'
 export function dispatch(st, op, args = {}, actor = 'you') {
   const fn = OPS[op];
   if (!fn) return { ok: false, error: { code: 'unknown_op', message: `Unknown operation ${op}` } };
+  // Any call from Claude, even a refused one, proves the connector works: stamp when it was last seen.
+  if (actor === 'claude') { st.lastClaudeCall = { op, at: st.clock, time: new Date().toISOString() }; st.claudeConnected = true; }
   if (actor === 'claude' && PERSON_ONLY.has(op)) { const res = { ok: false, error: { code: 'person_only', message: 'Only a person can do this, in the website.' } }; logActivity(st, op, args, res); return res; }
   try {
-    if (actor === 'claude') { st.lastClaudeCall = { op, at: st.clock, time: new Date().toISOString() }; st.claudeConnected = true; }
     const res = { ok: true, data: fn(st, args || {}, actor) };
-    if (actor === 'claude') logActivity(st, op, args, res);
+    if (actor === 'claude' || USER_LOGGED.has(op)) logActivity(st, op, args, res, actor);
     return res;
   } catch (e) {
     const res = e instanceof ApiError ? (() => { const { code, message, ...rest } = e; return { ok: false, error: { code, message, ...rest } }; })() : { ok: false, error: { code: 'internal', message: e.message } };
@@ -1087,9 +1112,27 @@ export function dispatch(st, op, args = {}, actor = 'you') {
     return res;
   }
 }
-function logActivity(st, op, args, res) {
+// The activity log is "what happened": every Claude call (look-ups included, kind 'read') and the
+// person's own meaningful website actions (actor 'you'). Website reads, settings and failed taps are not logged.
+const USER_LOGGED = new Set(['create_basket', 'update_basket', 'duplicate_basket', 'delete_basket', 'exit_basket', 'add_stock', 'remove_stock', 'add_candidate',
+  'set_rule', 'toggle_rule', 'reset_rules', 'set_basket_rule', 'confirm_order', 'cancel_order', 'add_news_flag', 'delete_news_flag', 'advance_day', 'advance_quarter']);
+function logActivity(st, op, args, res, actor = 'claude') {
   st.activity ||= [];
-  const sum = activitySummary(st, op, args || {}, res);
-  st.activity.unshift({ id: `c${(st.actSeq = (st.actSeq || 0) + 1)}`, at: new Date().toISOString(), clock: st.clock, actor: 'claude', tool: op, ok: res.ok, ...sum });
-  if (st.activity.length > 300) st.activity.length = 300;
+  let sum;
+  try { sum = activitySummary(st, op, args || {}, res); } catch { sum = { text: op.replace(/_/g, ' '), kind: res.ok ? 'change' : 'error' }; }
+  if (!sum || (actor !== 'claude' && sum.kind === 'read')) return;
+  // The person's own drafts go straight to their review sheet and to-do list; the log records the confirm instead.
+  if (actor !== 'claude' && sum.kind === 'needs_you') { if (op !== 'add_news_flag') return; sum.kind = 'change'; }
+  st.activity.unshift({ id: `c${(st.actSeq = (st.actSeq || 0) + 1)}`, at: new Date().toISOString(), clock: st.clock, actor, tool: op, ok: res.ok, ...sum });
+  // Keep the log bounded; look-ups go first so they never push real actions out.
+  while (st.activity.length > 300) { const i = st.activity.findLastIndex(x => x.kind === 'read'); st.activity.splice(i < 0 ? st.activity.length - 1 : i, 1); }
+}
+// Snapshot for the website: recent actions plus a few look-ups, newest first.
+function recentActivity(st) {
+  let acts = 0, reads = 0;
+  return (st.activity || []).filter(x => (x.kind === 'read' ? reads++ < 20 : acts++ < 60));
+}
+// "needs_you" entries say whether the orders they prepared are still waiting (pending) or already settled.
+function activityView(st, list) {
+  return list.map(x => (x.kind === 'needs_you' && x.orderIds ? { ...x, pending: x.orderIds.some(id => st.orders.some(o => o.id === id && o.status === 'pending')) } : x));
 }

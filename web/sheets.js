@@ -3,6 +3,7 @@ import { html, useState, useEffect, useRef } from './vendor/preact-htm.js';
 import { store, act, read, go, openSheet, closeSheet, copy, toast, confirmDialog, refresh } from './store.js';
 import { inr, inr2, pct, cls, short, shortName, STATUS, Pill, Src, Avatar, I, Stepper, Logo } from './lib.js';
 import { Info, InfoSheet } from './glossary.js';
+import { orderWhy } from './pages.js';
 export { exitBasket };
 
 export function SheetHost() {
@@ -11,7 +12,8 @@ export function SheetHost() {
   useEffect(() => {
     if (!s) return;
     const prev = document.activeElement;
-    const el = ref.current?.querySelector('input:not([type=checkbox]),textarea,select,button.primary');
+    const coarse = window.matchMedia?.('(pointer: coarse)').matches; // on a phone, don't pop the keyboard over the sheet
+    const el = ref.current?.querySelector(coarse ? 'button.primary' : 'input:not([type=checkbox]),textarea,select,button.primary');
     setTimeout(() => el?.focus?.(), 30);
     const onKey = e => { if (e.key === 'Escape') dismiss(); };
     document.addEventListener('keydown', onKey);
@@ -177,7 +179,7 @@ const SHEETS = {
     return html`<div class="stack" style="gap:14px"><div class="row between"><h2>${isExit ? `Sell everything in ${s.exit?.name || 'this basket'}` : `Confirm ${pending.length} order${pending.length > 1 ? 's' : ''}`}</h2><${Src} s=${pending[0].source}/></div>
       ${isExit && html`<div class="tiles"><div class="tile"><span class="k">Money back (about)</span><span class="v">${inr(proceeds)}</span></div>${s.exit?.cost ? html`<div class="tile"><span class="k">Profit / loss (about)</span><span class="v ${cls(proceeds - s.exit.cost)}">${proceeds - s.exit.cost >= 0 ? '+' : '−'}${inr(Math.abs(proceeds - s.exit.cost))}</span></div>` : null}</div>`}
       ${pending.some(o => o.tag === 'news_only') && html`<div class="why" style="margin:0"><span><b>Based on news, not yet in results.</b> The next quarterly results confirm or clear it. <${Info} k="newsflag"/></span></div>`}
-      <div class="card list" style="padding:2px 16px">${pending.map(o => html`<div class="li" key=${o.id}><span class="side ${o.side}">${o.side.toUpperCase()}</span><span class="grow"><span class="t">${o.name}</span><span class="s">× ${inr2(o.estPrice)} · ${o.reason}</span></span>
+      <div class="card list" style="padding:2px 16px">${pending.map(o => html`<div class="li" key=${o.id}><span class="side ${o.side}">${o.side.toUpperCase()}</span><span class="grow"><span class="t">${o.name}</span><span class="s">× ${inr2(o.estPrice)}${orderWhy(o, o.tag === 'news_only') ? ` · ${orderWhy(o, o.tag === 'news_only')}` : ''}</span></span>
         ${o.tag === 'exit' ? html`<b class="num">${o.qty} sh</b>` : html`<${Stepper} label="Quantity for ${o.name}" value=${o.qty} min=${1} max=${o.side === 'sell' ? o.qty : 9999} onChange=${v => act('update_order', { order_id: o.id, qty: v })}/>`}
         <button class="iconlink" aria-label="Cancel ${o.name}" onClick=${() => act('cancel_order', { order_id: o.id, reason: 'Cancelled by you' }, { ok: 'Order cancelled' })}>${I.x}</button></div>`)}</div>
       <dl class="kv"><dt>${total >= 0 ? 'You pay (about)' : 'You get (about)'}</dt><dd>${inr(Math.abs(total))}</dd><dt>Practice cash now <${Info} k="practice"/></dt><dd>${inr(S.cash)}</dd><dt>Price used</dt><dd>Last close ± 0.1%</dd></dl>

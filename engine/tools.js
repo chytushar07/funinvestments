@@ -8,7 +8,7 @@ const STAGES = ['raw', 'parts', 'brands', 'commercial', 'retail', 'oilgas', 'pow
 const ruleOverride = { type: 'object', properties: { green: { type: 'number' }, red: { type: 'number' }, enabled: { type: 'boolean' }, critical: { type: 'boolean' } } };
 
 export const TOOLS = [
-  { name: 'get_activity', group: 'Stocks', description: 'Start here in every new chat. Returns what Claude did recently in FunInvestments (with times) and the user\'s to-do list: orders waiting for confirmation, urgent alerts, baskets that need stocks, news flags waiting for results. Use it to pick up where the last chat stopped.',
+  { name: 'get_activity', group: 'Stocks', description: 'Start here in every new chat. Returns what happened recently in FunInvestments (with times): what Claude did, and what the user did in the website (actor \'you\'), plus the user\'s to-do list: orders waiting for confirmation, urgent alerts, baskets that need stocks, news flags waiting for results. Use it to pick up where the last chat stopped.',
     inputSchema: { type: 'object', properties: { limit: { type: 'integer', description: 'How many recent actions, default 30' } } } },
   { name: 'get_universe', group: 'Stocks', description: 'Search the stocks FunInvestments covers, scored by the default rules. Filter by text, sector (e.g. "Energy"), theme (ac | energy), segment, status, profitable_years (no loss in each of the last N years), max_debt_equity, min_traded_value_cr and max_warnings. Each stock includes loss years in last 5, debt/equity and traded value.',
     inputSchema: { type: 'object', properties: { q: { type: 'string' }, sector: { type: 'string' }, theme: { type: 'string', enum: THEMES }, stage: { type: 'string', enum: STAGES }, status: { type: 'string', enum: ['pass', 'watch', 'remove'] }, profitable_years: { type: 'integer', minimum: 1, maximum: 5 }, max_debt_equity: { type: 'number', description: 'e.g. 0.5' }, min_traded_value_cr: { type: 'number', description: 'Daily traded value, ₹ crore' }, max_warnings: { type: 'integer' }, sort: { type: 'string', enum: ['points', 'gainers', 'losers', 'movers', 'name'] }, limit: { type: 'integer' } } } },
@@ -54,7 +54,7 @@ export const TOOLS = [
 
 // Website path for each tool (parity map).
 export const PARITY = {
-  get_activity: 'Home → Your next step + Claude activity',
+  get_activity: 'Home → Your next step + Recent activity',
   get_universe: 'Home / Explore → search + filter chips',
   add_candidate: 'Explore → + Add stock',
   create_basket: 'Home → Create basket → pick stocks → Create',

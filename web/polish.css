@@ -1,0 +1,15 @@
+/* Review pass: readable secondary text and bigger tap areas, without changing how anything looks. */
+/* Secondary text met only ~3.7:1; these are the same hues, a notch stronger (>= 4.5:1). */
+:root { --faint: #8893A5; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --faint: #667085; } }
+:root[data-theme="light"] { --faint: #667085; }
+
+/* Small controls keep their look; an invisible 40px-tall touch area surrounds them. */
+.clock button, .linkbtn, .seg.small button, .topbar .brand, .chip, .btn.small, .iconlink:not(.sheet-x) { position: relative; }
+.clock button::after, .linkbtn::after, .seg.small button::after, .topbar .brand::after, .iconlink::after { content: ""; position: absolute; inset: -8px 0; }
+.linkbtn::after { inset: -10px -4px; }
+.chip::after, .btn.small::after { content: ""; position: absolute; inset: -3px 0; }
+.info::after { inset: -12px; }
+
+/* A tag beside a sheet title must not sit under the close button. */
+.sheet .row.between > h2 + * { margin-right: 34px; }

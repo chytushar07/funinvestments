@@ -6,6 +6,7 @@ import { inr, inr2, pct, cls, short, dateLabel, shortName, STATUS, Pill, Src, Av
 import { Info } from './glossary.js';
 import { exitBasket } from './sheets.js';
 import { startTour, tourSeen } from './tour.js';
+import { STORIES, Story } from './stories.js';
 const warn = n => `${n} warning${n === 1 ? '' : 's'}`;
 export const ago = iso => { if (!iso) return ''; const s = Math.max(0, (Date.now() - new Date(iso)) / 1000); if (s < 60) return 'just now'; if (s < 3600) return `${Math.floor(s / 60)} min ago`; if (s < 86400) return `${Math.floor(s / 3600)} h ago`; return `${Math.floor(s / 86400)} d ago`; };
 
@@ -22,34 +23,50 @@ export function NextStep() {
   const t = S.todo?.[0];
   if (!t) return null;
   return html`<section class="card nextstep" aria-label="Your next step">
-    <div class="row between"><span class="eyebrow">Your next step</span>${S.todo.length > 1 && html`<button class="linkbtn" style="font-size:12.5px" onClick=${() => go('activity')}>+${S.todo.length - 1} more</button>`}</div>
-    <div class="row between" style="gap:12px"><div style="min-width:0"><b>${t.text}</b><div class="muted" style="font-size:13px">${t.detail}</div></div>
-      <button class="btn small primary" onClick=${() => doTodo(t)}>${TODO_BTN[t.kind] || 'Open'}</button></div></section>`;
+    <div class="ns-main"><div class="row"><span class="eyebrow">Your next step</span>${S.todo.length > 1 && html`<button class="linkbtn" onClick=${() => go('activity')}>+${S.todo.length - 1} more</button>`}</div>
+      <b>${t.text}</b><span class="ns-d muted">${t.detail}</span></div>
+    <button class="btn small primary" onClick=${() => doTodo(t)}>${TODO_BTN[t.kind] || 'Open'}</button></section>`;
 }
-export function ActivityRow({ a }) {
-  return html`<div class="li"><span class="act-ic ${a.kind}" aria-hidden="true">${a.kind === 'needs_you' ? '!' : a.kind === 'error' ? '✕' : a.kind === 'change' ? '✓' : '·'}</span>
-    <span class="grow"><span class="t">${a.text}</span><span class="s">${ago(a.at)} · demo date ${short(a.clock)}${a.kind === 'needs_you' ? ' · needs your OK' : ''}</span></span></div>`;
+// One line of "what happened". Look-ups (kind 'read') change nothing, so they render quieter than real actions.
+const ACT_IC = { needs_you: '!', error: '✕', change: '✓' };
+export function ActivityRow({ a, compact }) {
+  if (a.kind === 'read') return html`<div class="li act-read"><span class="act-ic read" aria-hidden="true">${I.search}</span><span class="grow">${a.text}${a.n > 1 ? html` <span class="faint">×${a.n}</span>` : null}</span><span class="faint">${ago(a.at)}</span></div>`;
+  const waiting = a.kind === 'needs_you' && a.pending !== false; // a draft that was confirmed or cancelled no longer asks for an OK
+  const k = a.kind === 'needs_you' && !waiting ? 'change' : a.kind;
+  return html`<div class="li ${compact ? 'act-compact' : ''}"><span class="act-ic ${k}" aria-hidden="true">${ACT_IC[k] || '·'}</span>
+    <span class="grow"><span class="t">${a.text}</span><span class="s">${ago(a.at)}${compact ? '' : ` · demo date ${short(a.clock)}`}${waiting ? ' · needs your OK' : ''}</span></span><${Src} s=${a.actor}/></div>`;
 }
-export function ClaudeActivity({ limit = 3 }) {
-  const S = store.S;
-  if (!S.activity?.length) return null;
-  return html`<section class="section"><div class="section-head"><h2>${I.spark} Claude activity</h2><button class="linkbtn" onClick=${() => go('activity')}>See all</button></div>
-    <div class="card list" style="padding:2px 16px">${(S.activity.filter(a => a.kind !== 'read').length ? S.activity.filter(a => a.kind !== 'read') : S.activity).slice(0, limit).map(a => html`<${ActivityRow} key=${a.id} a=${a}/>`)}</div></section>`;
+const isAction = a => a.kind !== 'read';
+// Home: the latest things that really happened, by you, Claude or the rules. Look-ups and refused attempts stay on the Activity page.
+export function RecentActivity({ limit = 3 }) {
+  const list = (store.S.activity || []).filter(a => a.kind === 'change' || a.kind === 'needs_you');
+  if (!list.length) return null;
+  return html`<section class="section recent"><div class="section-head"><h2>Recent activity</h2><button class="linkbtn" onClick=${() => go('activity')}>See all</button></div>
+    <div class="card list">${list.slice(0, limit).map(a => html`<${ActivityRow} key=${a.id} a=${a} compact/>`)}</div></section>`;
 }
 
+const ACT_FILTERS = {
+  actions: ['Actions', isAction], needs_you: ['Needs you', a => a.kind === 'needs_you' && a.pending !== false], you: ['By you', a => isAction(a) && a.actor === 'you'],
+  claude: ['By Claude', a => isAction(a) && a.actor === 'claude'], read: ['Looked up', a => !isAction(a)], error: ['Refused or failed', a => a.kind === 'error'],
+};
+// The same look-up several times in a row is one quiet line with a count.
+const mergeReads = list => list.reduce((out, a) => { const p = out.at(-1); if (p && p.kind === 'read' && a.kind === 'read' && p.tool === a.tool) p.n++; else out.push({ ...a, n: 1 }); return out; }, []);
 export function Activity() {
   const S = store.S;
-  const [f, setF] = useState('all');
-  const list = (S.activity || []).filter(a => f === 'all' || a.kind === f || (f === 'change' && a.kind === 'needs_you'));
+  const [f, setF] = useState('actions');
+  const all = S.activity || [];
+  const chips = Object.entries(ACT_FILTERS).filter(([k, [, test]]) => k === 'actions' || k === f || all.some(test));
+  const list = mergeReads(all.filter(ACT_FILTERS[f][1]));
   return html`<div>
     <div class="row" style="margin-top:4px"><button class="iconbtn" onClick=${() => history.back()} aria-label="Back">${I.back}</button><h1>Activity</h1></div>
     <section class="section"><h2>To do</h2>
-      ${S.todo?.length ? html`<div class="card list" style="padding:2px 16px">${S.todo.map((t, i) => html`<div class="li" key=${i}><span class="grow"><span class="t">${t.text}</span><span class="s">${t.detail}</span></span><button class="btn small" onClick=${() => doTodo(t)}>${TODO_BTN[t.kind] || 'Open'}</button></div>`)}</div>`
+      ${S.todo?.length ? html`<div class="card list" style="padding:2px 16px">${S.todo.map((t, i) => html`<div class="li" key=${t.kind + (t.basketId || '') + i}><span class="grow"><span class="t">${t.text}</span><span class="s">${t.detail}</span></span><button class="btn small ${i ? '' : 'primary'}" onClick=${() => doTodo(t)}>${TODO_BTN[t.kind] || 'Open'}</button></div>`)}</div>`
       : html`<span class="muted">Nothing waiting for you.</span>`}</section>
-    <section class="section"><div class="section-head"><h2>${I.spark} What Claude did</h2>${S.lastClaudeCall?.time && html`<span class="faint" style="font-size:12.5px">last ${ago(S.lastClaudeCall.time)}</span>`}</div>
-      <div class="chips">${[['all', 'All'], ['needs_you', 'Needs you'], ['change', 'Changes'], ['read', 'Looked up'], ['error', 'Refused or failed']].map(([v, l]) => html`<button key=${v} class="chip ${f === v ? 'on' : ''}" onClick=${() => setF(v)}>${l}</button>`)}</div>
+    <section class="section"><div class="section-head"><h2>What happened</h2>${S.lastClaudeCall?.time && html`<span class="faint" style="font-size:12.5px">Claude · ${ago(S.lastClaudeCall.time)}</span>`}</div>
+      ${all.length > 0 && html`<div class="chips">${chips.map(([v, [l]]) => html`<button key=${v} class="chip ${f === v ? 'on' : ''}" aria-pressed=${f === v} onClick=${() => setF(v)}>${l}</button>`)}</div>`}
       ${list.length ? html`<div class="card list" style="padding:2px 16px">${list.map(a => html`<${ActivityRow} key=${a.id} a=${a}/>`)}</div>`
-      : html`<${Empty} title=${S.activity?.length ? 'Nothing in this filter' : 'Claude hasn\'t done anything yet'}><span class="muted">Connect Claude in Settings, then ask it to build a basket. Every action shows up here, even after you close the chat.</span><button class="btn small" onClick=${() => go('account')}>Connect Claude</button></${Empty}>`}</section>
+      : all.length ? html`<${Empty} title=${f === 'actions' ? 'No actions yet' : 'Nothing in this filter'}>${f === 'actions' && html`<span class="muted">Claude has only looked things up so far.</span><button class="btn small" onClick=${() => setF('read')}>See look-ups</button>`}</${Empty}>`
+      : html`<${Empty} title="Nothing yet"><span class="muted">What you and Claude do shows up here.</span>${!S.claudeConnected && html`<button class="btn small" onClick=${() => go('account')}>Connect Claude</button>`}</${Empty}>`}</section>
   </div>`;
 }
 
@@ -81,7 +98,7 @@ export function BasketCard({ b, compact }) {
   return html`<button class="bcard ${compact ? 'compact' : ''}" onClick=${() => go('basket-' + b.id)}>
     <div class="top"><span class="name">${b.name}</span><${Src} s=${b.source}/>${b.kind === 'tracking' && html`<span class="tag">Tracking</span>`}<span style="flex:1"></span>${b.unread ? html`<span class="dot-badge" style="position:static">${b.unread}</span>` : null}</div>
     ${!compact && b.description && html`<div class="muted" style="font-size:13px;margin-top:-6px">${b.description}</div>`}
-    <div class="row between"><div class="stack-logos">${logos.map(s => html`<${Avatar} key=${s.symbol} name=${s.name} stage=${s.stage}/>`)}${b.count > 5 && html`<span class="avatar more">+${b.count - 5}</span>`}</div><span class="muted" style="font-size:13px">${b.count} stocks${b.themeLabel ? ` · ${b.themeLabel}` : ''}</span></div>
+    <div class="row between"><div class="stack-logos">${logos.map(s => html`<${Avatar} key=${s.symbol} name=${s.name} stage=${s.stage}/>`)}${b.count > 5 && html`<span class="avatar more">+${b.count - 5}</span>`}</div><span class="muted" style="font-size:13px">${b.count} stock${b.count === 1 ? '' : 's'}${b.themeLabel ? ` · ${b.themeLabel}` : ''}</span></div>
     <div class="figs">
       <div class="fig"><div class="k">Value</div><div class="v">${b.isInvested ? inr(b.value) : '—'}</div></div>
       <div class="fig"><div class="k">Return</div><div class="v ${cls(b.returnPct)}">${b.isInvested ? pct(b.returnPct) : '—'}</div></div>
@@ -116,40 +133,32 @@ export function Home() {
   const passing = U.filter(x => x.status === 'pass').sort((a, b) => a.points - b.points).slice(0, 10);
   const models = S.baskets;
   const total = S.cash + S.baskets.filter(b => b.kind === 'model').reduce((t, b) => t + b.value, 0);
+  const usedClaude = S.claudeConnected && (S.activity || []).some(a => a.actor === 'claude' && a.kind !== 'read'); // already built something with Claude: no how-to line needed
   return html`<div>
-    <${PlanSwitch}/>
+    <${PlanSwitch} home/>
     <${NextStep}/>
-    ${!tourSeen() && html`<div class="card tour-invite"><div><b>New here?</b><div class="muted" style="font-size:13px">A 1-minute tour shows you around.</div></div><button class="btn small primary" onClick=${startTour}>Take the tour</button></div>`}
+    ${!tourSeen() && html`<div class="card tour-invite"><div><b>New here?</b><div class="muted" style="font-size:13px">Take the 1-minute tour.</div></div><button class="btn small primary" onClick=${startTour}>Start tour</button></div>`}
     <button class="searchbar" data-tour="search" onClick=${() => seeAll({ focus: true })}>${I.search}<span>Search ${U.length} stocks</span></button>
     ${models.length ? html`<section class="section">
       <div class="section-head"><div><h2>Your baskets</h2><div class="faint num" style="font-size:12.5px;margin-top:2px">Practice portfolio ${inr(total)} · cash ${inr(S.cash)}</div></div><button class="linkbtn" onClick=${() => go('baskets')}>See all</button></div>
       <div class="hscroll">${models.map(b => html`<div class="hb" key=${b.id}><${BasketCard} b=${b} compact/></div>`)}
-        <button class="tile-s more newtile" onClick=${() => newBasket()}><span class="plus">+</span>New basket</button></div></section>`
-    : html`<section class="hero-mini card">
+        <button class="tile-s more newtile" data-tour="create" onClick=${() => newBasket()}><span class="plus">+</span>New basket</button></div></section>`
+    : html`<section class="hero-mini card" data-tour="create">
       <div><span class="eyebrow">Your baskets · your rules</span><h1 style="margin-top:6px">Pick stocks. Set rules. We watch them daily.</h1></div>
       <div class="row wrap" style="gap:10px"><button class="btn primary" onClick=${() => newBasket()}>Create basket</button><button class="btn ghost" onClick=${() => document.getElementById('with-claude')?.scrollIntoView({ behavior: 'smooth' })}>${I.spark} With Claude</button></div>
       <div class="row wrap muted" style="font-size:12.5px;gap:12px"><span>₹1,00,000 practice money <${Info} k="practice"/></span><span>13 safety rules</span><span>Past test 2018–2025</span></div></section>`}
 
-    <${ClaudeActivity}/>
+    <${RecentActivity}/>
     <${HRow} tour="movers" title="Top movers today" items=${movers} onAll=${() => seeAll({ sort: mov })}
       right=${html`<div class="seg small">${[['gainers', 'Gainers'], ['losers', 'Losers']].map(([v, l]) => html`<button key=${v} class=${mov === v ? 'on' : ''} onClick=${() => setMov(v)}>${l}</button>`)}</div>`}/>
     <${HRow} title="Energy" sub="Oil & gas · power · renewables · coal" items=${energy} onAll=${() => seeAll({ theme: 'energy' })}/>
-    <${HRow} title="AC value chain" sub="From your research" items=${ac} onAll=${() => seeAll({ theme: 'ac' })}/>
-    <${HRow} title="Pass the default rules" info="status" sub="Fewest warnings first" items=${passing} onAll=${() => seeAll({ status: 'pass' })}/>
-
-    <section class="section" data-tour="create"><div class="card cta-card">
-      <div><h2>Create your own basket</h2><p class="muted" style="margin:4px 0 0;font-size:13.5px">Pick stocks, keep or tweak the 13 rules, invest practice money.</p></div>
-      <button class="btn primary" onClick=${() => newBasket()}>Create basket</button></div></section>
+    <${HRow} title="AC value chain" items=${ac} onAll=${() => seeAll({ theme: 'ac' })}/>
+    <${HRow} title="Pass the default rules" info="status" items=${passing} onAll=${() => seeAll({ status: 'pass' })}/>
 
     <section class="section" id="with-claude" data-tour="claude">
-      <div class="section-head"><div><h2>Build with Claude</h2><div class="faint" style="font-size:12.5px;margin-top:2px">Claude researches. The basket lands here with its rules.</div></div>${S.claudeConnected ? html`<span class="tag claude">Connected</span>` : html`<button class="linkbtn" onClick=${() => go('account')}>Connect</button>`}</div>
-      <div class="prompts">${PROMPTS.map(x => html`<div class="prompt" key=${x.t}><b>${x.t}</b><p>${x.p}</p><button class="btn small ghost" onClick=${() => copy(x.p)}>Copy prompt</button></div>`)}</div>
-      <p class="faint" style="font-size:12.5px;margin:0">${S.claudeConnected ? 'Paste a prompt into Claude. You confirm every order here.' : html`Connect once in <button class="linkbtn" style="font-size:12.5px" onClick=${() => go('account')}>Settings → Connect Claude</button>, then paste a prompt into Claude.`}</p>
-      <div class="card stack" style="gap:6px;padding:12px 16px">
-        <div class="row between"><b style="font-size:14px">${I.spark} Claude activity</b>${S.activity?.length ? html`<button class="linkbtn" onClick=${() => go('activity')}>See all</button>` : null}</div>
-        ${S.activity?.length ? html`<div class="list">${(S.activity.filter(a => a.kind !== 'read').length ? S.activity.filter(a => a.kind !== 'read') : S.activity).slice(0, 3).map(a => html`<${ActivityRow} key=${a.id} a=${a}/>`)}</div>`
-          : html`<span class="muted" style="font-size:13px">Nothing yet. Paste a prompt into Claude and every step it takes shows up here, even after you close the chat.</span>`}
-      </div>
+      <div class="section-head"><div><h2>Build with Claude</h2>${!S.claudeConnected && html`<div class="faint" style="font-size:12.5px;margin-top:2px">Claude researches. The basket lands here with its rules.</div>`}</div>${S.claudeConnected ? html`<span class="tag claude">Connected</span>` : html`<button class="linkbtn" onClick=${() => go('account')}>Connect</button>`}</div>
+      ${(() => { const list = html`<div class="prompts">${PROMPTS.map(x => html`<div class="prompt" key=${x.t}><b>${x.t}</b><p>${x.p}</p><button class="btn small ghost" onClick=${() => copy(x.p)}>Copy prompt</button></div>`)}</div>`; return usedClaude ? html`<details class="cfold"><summary>Prompt ideas</summary>${list}</details>` : list; })()}
+      ${!usedClaude && html`<p class="faint" style="font-size:12.5px;margin:0">${S.claudeConnected ? 'Paste a prompt into Claude. You confirm every order here.' : html`Connect once in <button class="linkbtn" style="font-size:12.5px" onClick=${() => go('account')}>Settings → Connect Claude</button>, then paste a prompt into Claude.`}</p>`}
     </section>
   </div>`;
 }
@@ -220,7 +229,7 @@ export function Stock({ symbol }) {
       <div style="min-width:0"><h1 style="font-size:20px">${s.name}</h1><div class="row wrap" style="gap:6px"><span class="mono muted">${s.symbol}</span><span class="faint" style="font-size:12.5px">${s.sector} · ${s.stageLabel}</span>${d.isCustom && html`<${Src} s=${s.source}/>`}</div></div></div>
     <section class="stack" style="gap:4px;margin-top:16px"><div class="big num">${inr2(s.price)}</div><div class="row wrap"><span style="font-weight:700"><${Chg} v=${s.changePct}/> today</span><${Mock}/></div></section>
     <div class="card stack" style="margin-top:14px;gap:10px">
-      <div class="row between"><span class="row" style="gap:6px"><${Pill} s=${s.liveStatus}/><${Info} k="status"/></span><span class="pts">${warn(s.points)} <${Info} k="warnings"/> · ${d.basketName ? `rules of ${d.basketName}` : 'default rules'}</span></div>
+      <div class="row between"><span class="row" style="gap:6px"><${Pill} s=${s.liveStatus}/><${Info} k="status"/></span><span class="pts">${warn(s.points)} · ${d.basketName ? `rules of ${d.basketName}` : 'default rules'}</span></div>
       ${!/^(No warnings|\d+ warnings?)$/.test(s.reasons.join(' · ')) && html`<div class="muted" style="font-size:13px">${s.reasons.join(' · ')}</div>`}
       <${Sparkline} pts=${d.history}/>
       <div class="row between faint" style="font-size:11.5px"><span>${d.history[0]?.t || ''}</span><span>Profit in ${s.profitableYears === 5 ? 'all 5' : s.profitableYears} of the last 5 years · mock</span></div>
@@ -255,6 +264,8 @@ function ThemeShares({ d }) {
       <button class="btn small" disabled=${vals[t.id] == null} onClick=${async () => { const r = await act('set_theme_share', { symbol: d.stock.symbol, theme: t.id, share: vals[t.id] }, { ok: 'Saved' }); if (r?.ok) setVals({}); }}>Save</button></div>`)}</div></section>`;
 }
 
+// A draft's reason is only worth a line when it says more than the BUY / SELL tag already does.
+export const orderWhy = (o, short) => { const r = (o.reason || '').trim(); return /^(buy|sell)$/i.test(r) ? '' : short ? r.replace(/^Based on news, not yet in results:\s*/, '') : r; };
 export function OrderRow({ o }) {
   return html`<div class="li"><span class="side ${o.side}">${o.side.toUpperCase()}</span><span class="grow"><span class="t">${o.name}</span><span class="s">${o.qty} sh · ${o.status === 'filled' ? `filled ${inr2(o.fill.price)}` : o.status === 'cancelled' ? (o.cancelReason || 'Cancelled') : 'pending'} · ${short(o.createdAt)}</span></span><${Src} s=${o.source}/></div>`;
 }
@@ -320,7 +331,7 @@ function BasketOverview({ b, setTab }) {
       <div class="row between"><span class="eyebrow">Where the money is <${Info} k="segment"/></span><span class="faint" style="font-size:12px">${b.isInvested ? 'Now' : 'Planned'}</span></div>
       <div class="wbar" role="img" aria-label=${sw.map(([s, w]) => `${stageLabel(s)} ${w}%`).join(', ')}>${sw.map(([s, w]) => html`<span key=${s} style="width:${w}%;background:${stageColor(s)}" title="${stageLabel(s)} ${w}%"></span>`)}</div>
       <div class="legend">${sw.map(([s, w]) => html`<span key=${s}><i style="background:${stageColor(s)}"></i>${stageLabel(s)} <b class="num">${w.toFixed(0)}%</b></span>`)}</div>
-      <div class="faint" style="font-size:12px">Limits: ${b.limits.maxStageWeight}% per segment · ${b.limits.maxStockWeight}% per stock · ${b.limits.maxWatchWeight}% per Watch stock <${Info} k="limits"/></div></div>`}
+      <div class="faint" style="font-size:12px">Limits: ${b.limits.maxStageWeight}% a segment · ${b.limits.maxStockWeight}% a stock · ${b.limits.maxWatchWeight}% a Watch stock <${Info} k="limits"/></div></div>`}
     <div class="tiles">
       <div class="tile"><span class="k">${b.kind === 'tracking' ? 'What you paid' : 'Money put in'} <${Info} k="invested"/></span><span class="v">${inr(b.invested)}</span></div>
       <div class="tile"><span class="k">${b.kind === 'tracking' ? 'Worth now' : 'Cash in basket'}</span><span class="v">${inr(b.kind === 'tracking' ? b.value : b.cash)}</span></div>
@@ -382,13 +393,13 @@ function BasketRules({ b }) {
         <${Info} k=${r.id}/>
         <${Switch} id=${`rt-${b.id}-${r.id}`} checked=${r.enabled} label="${r.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: r.id, enabled: v }, { ok: v ? `${r.label} on` : `${r.label} off` })}/></div>`;
     })}</div>
-    <div class="faint" style="font-size:12px">★ Must-pass: one red means Remove <${Info} k="mustpass"/> · Amber = 1 warning, red = 2 · 4+ warnings = Watch · more than 8 = Remove</div>
+    <div class="faint" style="font-size:12px">★ Must-pass: one red means Remove <${Info} k="mustpass"/></div>
     ${b.kind === 'model' && html`<div class="row between" style="margin-top:8px"><span class="eyebrow">Basket limits <${Info} k="limits"/></span>${pro ? null : html`<span class="lock">Pro</span>`}</div>
       <div class="card list" style="padding:2px 16px">${steps.map(([k, , label, step, min, max, unit]) => html`<div class="li" key=${k}><span class="grow t">${label}${k === 'minTheme' && b.themeLabel ? html` <span class="faint" style="font-weight:600">(${b.themeLabel})</span>` : ''}</span>
         <${Stepper} label=${label} value=${cur[k]} min=${min} max=${max} step=${step} unit=${unit} onChange=${v => { if (!pro) { toast('Pro feature: basket limits', { action: 'See plans', go: 'pricing' }); return; } setLim({ ...cur, [k]: v }); }}/></div>`)}</div>
       ${dirty && html`<div class="row" style="gap:8px"><button class="btn primary" style="flex:1" onClick=${async () => { const args = { basket_id: b.id }; for (const [k, a] of steps) args[a] = lim[k]; const r = await act('set_basket_rule', args, { ok: 'Limits saved' }); if (r?.ok) setLim(null); }}>Save limits</button><button class="btn ghost" onClick=${() => setLim(null)}>Undo</button></div>`}`}
     <div class="row between" style="margin-top:8px"><span class="eyebrow">Company events</span>${pro ? null : html`<span class="lock">Pro</span>`}</div>
-    <div class="card list" style="padding:2px 16px">${b.rules.events.map(e => html`<div class="li" key=${e.id}><span class="grow"><span class="t">${e.label}${e.critical ? html` <span class="star">★</span>` : ''}</span><span class="s">${e.long}</span></span><${Info} k=${e.id}/>
+    <div class="card list" style="padding:2px 16px">${b.rules.events.map(e => html`<div class="li" key=${e.id}><span class="grow"><span class="t">${e.label}${e.critical ? html` <span class="star">★</span>` : ''}</span></span><${Info} k=${e.id}/>
       <${Switch} id=${`ev-${b.id}-${e.id}`} checked=${e.enabled} label="${e.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: e.id, enabled: v }, { ok: v ? 'On' : 'Off' })}/></div>`)}</div>
   </div>`;
 }
@@ -400,7 +411,7 @@ function Scorecard({ b }) {
   const [limit, setLimit] = useState(40);
   useEffect(() => { read('get_rule_scorecard', { basket_id: b.id, view: view === 'log' ? 'log' : 'summary' }).then(r => r.ok && setSc(r.data)); }, [b.id, view, store.rev]);
   const seg = html`<div class="seg">${[['year', 'By year'], ['rule', 'By rule'], ['log', 'Every decision']].map(([v, l]) => html`<button key=${v} class=${view === v ? 'on' : ''} onClick=${() => setView(v)}>${l}</button>`)}</div>`;
-  const head = html`<div class="stack" style="margin-top:14px;gap:10px"><p class="muted" style="margin:0;font-size:13.5px">Past test: this basket's rules applied to ${sc?.theme || 'its stocks'} every June 2018–2025, then the next 12 months checked. <${Info} k="backtest"/> <${Mock}/></p>${seg}</div>`;
+  const head = html`<div class="stack" style="margin-top:14px;gap:10px"><p class="muted" style="margin:0;font-size:13.5px">Past test: how this basket's rules did every June, 2018–2025. <${Info} k="backtest"/> <${Mock}/></p>${seg}</div>`;
   if (!sc) return html`${head}<div class="tiles" style="margin-top:14px"><div class="sk" style="height:84px"></div><div class="sk" style="height:84px"></div></div>`;
   if (sc.empty) return html`${head}<${Empty} title="No history for these stocks"><span class="muted">Past tests cover the AC and Energy stocks.</span></${Empty}>`;
   if (sc.locked) {
@@ -464,7 +475,7 @@ export function Orders() {
     <section class="section"><div class="section-head"><h2>Pending ${pending.length ? html`<span class="faint">${pending.length}</span>` : ''}</h2>${pending.length > 1 && html`<button class="linkbtn" onClick=${() => openSheet({ type: 'review', ids: pending.map(o => o.id) })}>Review all</button>`}</div>
       ${pending.length ? pending.map(o => html`<button key=${o.id} class="ocard" onClick=${() => openSheet({ type: 'review', ids: o.group && o.tag === 'invest' ? pending.filter(x => x.group === o.group).map(x => x.id) : [o.id] })}>
         <span class="side ${o.side}">${o.side.toUpperCase()}</span>
-        <span style="flex:1;min-width:0"><span style="font-weight:800;display:block">${o.name}</span><span class="muted" style="font-size:12.5px">${o.qty} sh · ~${inr(o.estValue)} · ${bname(o.basketId)}</span><span class="faint" style="font-size:12px;display:block">${o.reason}</span></span><${Src} s=${o.source}/></button>`)
+        <span style="flex:1;min-width:0"><span style="font-weight:800;display:block">${o.name}</span><span class="muted" style="font-size:12.5px">${o.qty} sh · ~${inr(o.estValue)} · ${bname(o.basketId)}</span>${orderWhy(o) && html`<span class="faint" style="font-size:12px;display:block">${orderWhy(o)}</span>`}</span><${Src} s=${o.source}/></button>`)
       : html`<${Empty} title="No pending orders"><span class="muted">Drafts from you, the rules or Claude wait here for your OK.</span></${Empty}>`}</section>
     ${S.orders.some(o => o.status !== 'pending') && html`<section class="section"><div class="section-head"><h2>History</h2><div class="seg small">${[['all', 'All'], ['filled', 'Filled'], ['cancelled', 'Cancelled']].map(([v, l]) => html`<button key=${v} class=${f === v ? 'on' : ''} onClick=${() => setF(v)}>${l}</button>`)}</div></div>
       ${done.length ? html`<div class="card list" style="padding:2px 16px">${done.slice(0, 60).map(o => html`<${OrderRow} key=${o.id} o=${o}/>`)}</div>` : html`<span class="muted">None.</span>`}</section>`}
@@ -525,8 +536,6 @@ export function Account() {
   const S = store.S;
   const [name, setName] = useState(S.user.name);
   const server = api.getMode() === 'server';
-  const base = server ? location.origin + location.pathname.replace(/[^/]*$/, '') : 'https://your-host.example/';
-  const url = base + 'mcp/' + S.user.apiKey;
   const pro = S.plan === 'pro';
   return html`<div>
     <div class="row" style="margin-top:4px"><button class="iconbtn" onClick=${() => history.back()} aria-label="Back">${I.back}</button><h1>Settings</h1></div>
@@ -535,37 +544,27 @@ export function Account() {
       <div class="row between"><span>Plan · <b>${pro ? 'Pro' : 'Free'}</b></span><button class="linkbtn" onClick=${() => go('pricing')}>See plans</button></div></div></section>
     <${ConnectClaude}/>
     <section class="section"><h2>Notifications</h2><div class="card list" style="padding:2px 16px">
-      <div class="li"><span class="grow"><span class="t">Urgent alerts</span><span class="s">A stock breaks a must-pass rule · always on, every plan</span></span><${Switch} id="nt-crit" checked=${true} disabled=${true} label="Critical alerts" onChange=${() => {}}/></div>
+      <div class="li"><span class="grow"><span class="t">Urgent alerts</span><span class="s">Always on, every plan</span></span><${Switch} id="nt-crit" checked=${true} disabled=${true} label="Critical alerts" onChange=${() => {}}/></div>
       <div class="li"><span class="grow"><span class="t">Push</span><span class="s">${pro ? 'Status changes and drafts' : html`<span class="lock">Pro</span>`}</span></span><${Switch} id="nt-push" checked=${S.notif.push} label="Push" onChange=${v => act('set_notif', { push: v })}/></div>
       <div class="li"><span class="grow"><span class="t">Email</span><span class="s">${pro ? 'Weekly digest' : html`<span class="lock">Pro</span>`}</span></span><${Switch} id="nt-email" checked=${S.notif.email} label="Email" onChange=${v => act('set_notif', { email: v })}/></div></div></section>
     <section class="section"><h2>Demo</h2><div class="card stack" style="gap:10px">
-      <div class="row wrap"><button class="btn small" onClick=${() => act('advance_day', {}, { ok: d => `${short(d.clock)} · checks run` })}>+1 day</button><button class="btn small" onClick=${() => act('advance_quarter', {}, { ok: d => `${short(d.clock)} · ${d.filings.length} filings · ${d.changes.length} changes` })}>+1 quarter</button>
-        <button class="btn small ghost danger" onClick=${() => confirmDialog({ title: 'Reset the demo?', body: 'Deletes every basket, order, alert and flag, and restores ₹1,00,000.', confirm: 'Reset', danger: true, onConfirm: async () => { await act('reset', {}, { ok: 'Demo reset' }); go('home'); } })}>Reset demo</button></div>
-      <dl class="kv"><dt>Clock</dt><dd>${dateLabel(S.clock)}</dd><dt>Next filing</dt><dd>${S.nextFiling ? `${S.nextFiling.symbol} · ${short(S.nextFiling.date)}` : '—'}</dd><dt>Data</dt><dd>${S.provider}</dd><dt>Mode</dt><dd>${server ? 'Server + Claude connector' : 'In your browser'}</dd></dl></div></section>
+      <dl class="kv"><dt>Demo date <${Info} k="democlock"/></dt><dd>${dateLabel(S.clock)}</dd><dt>Next results</dt><dd>${S.nextFiling ? `${S.nextFiling.symbol} · ${short(S.nextFiling.date)}` : '—'}</dd><dt>Prices</dt><dd>Mock data</dd><dt>Saved</dt><dd>${server ? 'Online' : 'In this browser'}</dd></dl>
+      <button class="btn small ghost danger" style="align-self:flex-start" onClick=${() => confirmDialog({ title: 'Start the demo over?', body: 'This erases every basket, order, alert, news flag and the activity log, and puts back ₹1,00,000 of practice money. It can\'t be undone.', confirm: 'Reset demo', danger: true, onConfirm: async () => { const r = await act('reset', {}, { ok: 'Demo reset · fresh start' }); if (r?.ok) go('home'); } })}>Reset demo</button></div></section>
   </div>`;
 }
 
 // ---------- Plan switch (demo) ----------
-export function PlanSwitch({ big }) {
+export function PlanSwitch({ big, home, rail }) {
   const S = store.S;
   const set = p => { if (p !== S.plan) act('set_plan', { plan: p }, { ok: p === 'pro' ? 'Pro is on · demo, no payment' : 'Back on Free' }); };
-  return html`<div class="plan-switch ${big ? 'big' : ''}" data-tour="plan">
+  return html`<div class="plan-switch ${big ? 'big' : ''} ${home ? 'home' : ''} ${rail ? 'in-rail' : ''}" data-tour="plan">
     <span class="muted" style="font-size:12.5px">Plan <span class="faint">(demo)</span></span>
     <div class="seg small" role="radiogroup" aria-label="Plan">${[['free', 'Free'], ['pro', 'Pro']].map(([v, l]) => html`<button key=${v} role="radio" aria-checked=${S.plan === v} class=${S.plan === v ? 'on' : ''} onClick=${() => set(v)}>${l}</button>`)}</div>
     <button class="linkbtn" style="font-size:12.5px" onClick=${() => go('about')}>Compare</button></div>`;
 }
 
 // ---------- About ----------
-const CAN = [
-  ['🔍', 'Browse and search', '55 Indian stocks in two themes, Energy and the AC value chain. Every one is checked by 13 safety rules.'],
-  ['🧺', 'Build baskets', 'Pick stocks by hand, paste symbols, or ask Claude. Each basket keeps its own rules and limits.'],
-  ['🛡️', 'Rules watch every day', 'Each stock is marked ✓ Pass, ! Watch or ✕ Remove. When something breaks a rule, you get an alert and a prepared order.'],
-  ['✅', 'You confirm every order', 'Orders use ₹1,00,000 of practice money. Change quantities, confirm, cancel, or keep a stock anyway with a reason.'],
-  ['📰', 'Flag news', 'Note that a story may change a number. The next quarterly results confirm or clear it.'],
-  ['🚪', 'Exit anytime', 'Sell one stock, or exit a whole basket and get the money back as practice cash.'],
-  ['📈', 'See if your rules work', 'The past test applies your rules to every year since 2018 and shows the good calls and the misses.'],
-  ['👛', 'Track real shares', 'Type in what you own. The rules send alerts; you sell in your own broker.'],
-];
+// The cards and their expandable examples live in stories.js.
 const PLAN_ROWS = [
   ['Baskets', '1', 'Unlimited'], ['Stocks per basket', '8', '12'], ['Tracking baskets (real shares)', '1', 'Unlimited'],
   ['13 safety rules', true, true], ['Change any rule\'s limits', false, true], ['Company events (auditor quits, rating cuts…)', false, true],
@@ -573,30 +572,55 @@ const PLAN_ROWS = [
   ['Past test', 'Latest year', '2018–2025'], ['Preview a rule change first', false, true], ['See if your overrides helped', false, true],
   ['Phone and email alerts', false, true], ['Share your rule results', false, true], ['Connect Claude', true, true], ['Practice money', '₹1,00,000', '₹1,00,000'],
 ];
+const PLAN_SHORT = ['Baskets', 'Stocks per basket', 'Rule checks', 'News flags', 'Past test', 'Change any rule\'s limits'];
 const cell = v => (v === true ? html`<span class="ok" aria-label="Included">✓</span>` : v === false ? html`<span class="faint" aria-label="Not included">—</span>` : v);
+const toConnect = () => { go('account'); setTimeout(() => document.getElementById('connect-claude')?.scrollIntoView({ behavior: 'smooth' }), 150); };
+
+function ClaudeRow() {
+  const S = store.S;
+  return S.claudeConnected
+    ? html`<div class="li"><span class="grow"><span class="t withic">${I.spark} Claude connected</span><span class="s">${S.lastClaudeCall?.time ? `Last active ${ago(S.lastClaudeCall.time)}` : 'Ready when you are'}</span></span><button class="linkbtn" onClick=${() => go('activity')}>Activity</button></div>`
+    : html`<div class="li"><span class="grow"><span class="t withic">${I.spark} Claude not connected <${Info} k="claude"/></span><span class="s">Optional. It researches, you confirm.</span></span><button class="btn small" onClick=${toConnect}>Connect</button></div>`;
+}
 
 export function About() {
-  const S = store.S;
+  const S = store.S, P = S.planInfo, pro = S.plan === 'pro';
+  const [all, setAll] = useState(false);
+  const first = S.baskets.length === 0, seen = tourSeen();
+  const models = S.baskets.filter(b => b.kind === 'model').length, tracking = S.baskets.length - models;
+  const t = S.todo?.[0];
+  const openFlags = S.flags.filter(f => f.status === 'open').length;
+  const flagsLeft = Math.max(0, P.flagsPerMonth - (S.flagsThisMonth || 0));
+  // What applies to this user right now, shown as a small tag on the card.
+  const tags = first ? {} : {
+    build: !pro && `${models} of ${P.maxBaskets} used`, track: !pro && `${tracking} of ${P.maxTracking} used`,
+    watch: pro ? 'Daily' : 'Weekly', results: S.nextFiling && `Next ${short(S.nextFiling.date)}`,
+    confirm: S.pending > 0 && `${S.pending} waiting`, flag: openFlags ? `${openFlags} open` : !pro && `${flagsLeft} left`,
+    past: pro ? '2018–2025' : 'Latest year',
+  };
+  const hot = { confirm: S.pending > 0, flag: openFlags > 0 };
+  const rank = id => (first ? 0 : hot[id] ? 0 : ['watch', 'results', 'confirm', 'flag'].includes(id) ? 1 : 2);
+  const stories = STORIES.map((s, i) => [s, i]).sort((a, b) => rank(a[0].id) - rank(b[0].id) || a[1] - b[1]).map(x => x[0]);
+  const rows = all ? PLAN_ROWS : PLAN_ROWS.filter(r => PLAN_SHORT.includes(r[0]));
   return html`<div>
-    <div class="row between" style="margin-top:4px"><h1>About</h1><button class="btn small primary" onClick=${startTour}>Take the tour</button></div>
-    <p class="muted" style="margin:8px 0 0;line-height:1.55">FunInvestments helps you stick to your own investing rules. You build baskets of stocks; the app checks them against your rules every day and tells you when to act. Claude can do the research, but you make every decision.</p>
-    <section class="section"><h2>How it works</h2>
-      <div class="howto">${[['1', 'Build a basket', 'Pick stocks or ask Claude.'], ['2', 'Rules watch it', 'Every day, 13 safety checks.'], ['3', 'You decide', 'Confirm, change or keep anyway.'], ['4', 'Learn', 'See which rules actually helped.']].map(([n, t, d]) => html`<div class="howstep" key=${n}><span class="n">${n}</span><b>${t}</b><span class="muted">${d}</span></div>`)}</div></section>
-    <section class="section"><h2>What you can do</h2>
-      <div class="can">${CAN.map(([e, t, d]) => html`<div class="canitem" key=${t}><span class="emo" aria-hidden="true">${e}</span><div><b>${t}</b><p>${d}</p></div></div>`)}</div></section>
-    <section class="section"><div class="section-head"><h2>Free and Pro</h2><${PlanSwitch}/></div>
-      <div class="tablewrap"><table class="plans-table"><thead><tr><th>Feature</th><th class=${S.plan === 'free' ? 'cur' : ''}>Free</th><th class=${S.plan === 'pro' ? 'cur' : ''}>Pro · ₹199/mo or ₹1,999/yr</th></tr></thead>
-        <tbody>${PLAN_ROWS.map(([f, a, b]) => html`<tr key=${f}><td>${f}</td><td class=${S.plan === 'free' ? 'cur' : ''}>${cell(a)}</td><td class=${S.plan === 'pro' ? 'cur' : ''}>${cell(b)}</td></tr>`)}</tbody></table></div>
-      <p class="faint" style="font-size:12px;margin:0">The plan switch is a demo: no payment is taken. Urgent alerts are never behind a paywall.</p></section>
-    <section class="section"><div class="section-head"><h2>${I.spark} Connect Claude</h2><button class="btn small primary" onClick=${() => { go('account'); setTimeout(() => document.getElementById('connect-claude')?.scrollIntoView({ behavior: 'smooth' }), 150); }}>Connect</button></div>
-      <div class="howto">${[['1', 'Open Claude Connectors', '+ → Add custom connector.'], ['2', 'Paste name and URL', 'From Settings → Connect Claude, then Add.'], ['3', 'Ask Claude', '"What\'s pending in FunInvestments?"'], ['4', 'Confirm here', 'Claude prepares; you confirm orders.']].map(([n, t, d]) => html`<div class="howstep" key=${n}><span class="n">${n}</span><b>${t}</b><span class="muted">${d}</span></div>`)}</div>
-      <p class="muted" style="margin:0;font-size:13.5px">Nothing is lost when a chat ends: baskets, orders and everything Claude did stay saved here. Home shows your next step; <button class="linkbtn" style="font-size:13.5px" onClick=${() => go('activity')}>Activity</button> shows what Claude did.</p></section>
-    <section class="section"><h2>Where things are</h2>
-      <div class="card list" style="padding:2px 16px">${[['Home', 'Your next step, Claude activity, browse stocks, create a basket', 'home'], ['Activity', 'Your to-do list and everything Claude did', 'activity'], ['Baskets', 'All your baskets, practice cash, tracking baskets', 'baskets'], ['Orders', 'Orders waiting for you, and past orders', 'orders'], ['Alerts', 'What changed and why', 'alerts'], ['Settings', 'Connect Claude (connector URL and steps), notifications, demo clock', 'account']].map(([t, d, r]) => html`<button key=${t} class="li btnrow" onClick=${() => go(r)}><span class="grow"><span class="t">${t}</span><span class="s">${d}</span></span>${I.chev}</button>`)}</div></section>
-    <section class="section"><h2>Good to know</h2><div class="card stack" style="gap:8px;font-size:13.5px">
-      <span>• All prices and company numbers are mock data, seeded from real NSE closing prices.</span>
-      <span>• Orders use practice money. No real shares are bought or sold.</span>
-      <span>• This is a learning tool, not investment advice.</span></div></section>
+    <div class="row between" style="margin-top:4px"><h1>About</h1>${!first && html`<button class="btn small ghost" onClick=${startTour}>Take tour</button>`}</div>
+    ${first ? html`<p class="muted" style="margin:8px 0 0;line-height:1.5">Stick to your own investing rules. The app watches; you decide.</p>
+      <section class="card nextstep" aria-label="Start here"><span class="eyebrow">Start here</span>
+        <div class="row between" style="gap:12px"><div style="min-width:0"><b>${seen ? 'Create your first basket' : 'New here? Take the tour'}</b><div class="muted" style="font-size:13px">${seen ? 'Pick stocks yourself or ask Claude.' : 'A quick walk around the app.'}</div></div>
+          <button class="btn small primary" onClick=${seen ? () => newBasket() : startTour}>${seen ? 'Create basket' : 'Start tour'}</button></div>
+        <button class="linkbtn" style="align-self:flex-start;font-size:12.5px;padding:0" onClick=${seen ? startTour : () => newBasket()}>${seen ? 'Take the tour again' : 'Skip, create a basket'}</button></section>`
+    : html`<section class="section"><div class="section-head"><h2>Where you are</h2>${S.todo.length > 1 && html`<button class="linkbtn" onClick=${() => go('activity')}>+${S.todo.length - 1} more</button>`}</div>
+      <div class="card list" style="padding:2px 16px">
+        <div class="li"><span class="grow"><span class="t">${t ? t.text : 'All caught up'}</span><span class="s">${t ? t.detail : 'Your rules are watching.'}</span></span>${t && html`<button class="btn small primary" onClick=${() => doTodo(t)}>${TODO_BTN[t.kind] || 'Open'}</button>`}</div>
+        <div class="li"><span class="grow"><span class="t">${pro ? 'Pro' : 'Free'} plan</span><span class="s">${pro ? `${models} basket${models === 1 ? '' : 's'} · daily checks · unlimited flags` : `${models} of ${P.maxBaskets} basket · weekly checks · ${flagsLeft} flag${flagsLeft === 1 ? '' : 's'} left`}</span></span><button class="linkbtn" onClick=${() => go('pricing')}>${pro ? 'Plans' : 'See Pro'}</button></div>
+        <${ClaudeRow}/></div></section>`}
+    <section class="section"><div class="section-head"><h2>How it works</h2><span class="faint" style="font-size:12px">Tap for an example</span></div>
+      <div class="can">${stories.map(s => html`<${Story} key=${s.id} s=${s} tag=${tags[s.id]} hot=${hot[s.id]}/>`)}</div></section>
+    <section class="section about-plans"><div class="section-head"><h2>Free and Pro <${Info} k="plandemo"/></h2><${PlanSwitch}/></div>
+      <div class="tablewrap"><table class="plans-table"><thead><tr><th>Feature</th><th class=${pro ? '' : 'cur'}>Free</th><th class=${pro ? 'cur' : ''}>Pro</th></tr></thead>
+        <tbody>${rows.map(([f, a, b]) => html`<tr key=${f}><td>${f}</td><td class=${pro ? '' : 'cur'}>${cell(a)}</td><td class=${pro ? 'cur' : ''}>${cell(b)}</td></tr>`)}</tbody></table></div>
+      <div class="row between"><button class="linkbtn" aria-expanded=${all} onClick=${() => setAll(!all)}>${all ? 'Show less' : `All ${PLAN_ROWS.length} features`}</button><button class="linkbtn" onClick=${() => go('pricing')}>Prices ›</button></div></section>
+    <${ConnectCard}/>
   </div>`;
 }
 
@@ -605,6 +629,43 @@ const CLAUDE_CONNECTORS = 'https://claude.ai/new#customize/connectors';
 const ONLINE_APP = 'https://funinvestments.green-sound-dc01.workers.dev/';
 const CLAUDE_NEW = 'https://claude.ai/new';
 const FIRST_ASK = "What's pending in FunInvestments?";
+
+// Connection status, shown the same way everywhere. Connected = Claude has reached this app at
+// least once (the engine stamps every Claude call). "Check status" re-reads the snapshot now.
+import { refresh } from './store.js';
+export function ClaudeStatus({ steps = '1–4' }) {
+  const S = store.S;
+  const hosted = api.getMode() === 'server';
+  const on = hosted && S.claudeConnected;
+  const [busy, setBusy] = useState(false);
+  const check = async () => {
+    if (busy) return;
+    setBusy(true);
+    await Promise.all([refresh(), new Promise(r => setTimeout(r, 450))]);
+    setBusy(false);
+    const N = store.S;
+    if (store.netError) toast("Can't check · no connection", { err: true });
+    else toast(N.claudeConnected ? `Connected · last used ${ago(N.lastClaudeCall?.time)}` : `Not connected yet · finish steps ${steps}`);
+  };
+  return html`<div class="cstatus">
+    <span class="tag ${on ? 'claude' : ''}">${on ? 'Connected' : 'Not connected'}</span>
+    <span class="grow muted">${!hosted ? html`Claude connects to the <a href=${ONLINE_APP} target="_blank" rel="noopener">online app</a>.` : busy ? 'Checking…' : on ? html`<button class="linkbtn" onClick=${() => go('activity')}>Last used ${ago(S.lastClaudeCall?.time)}</button>` : `Finish steps ${steps}`} <${Info} k="claudestatus"/></span>
+    ${hosted && html`<button class="btn small ghost" disabled=${busy} onClick=${check}>Check status</button>`}</div>`;
+}
+// Steps stay one tap away once Claude is connected.
+const SetupFold = ({ children }) => html`<details class="cfold"><summary>Setup steps</summary>${children}</details>`;
+
+// About's "Connect Claude" card: same 4 steps; the Connect button gives way to the status once connected.
+const HOW = [['1', 'Open Claude Connectors', '+ → Add custom connector.'], ['2', 'Paste name and URL', 'From Settings → Connect Claude, then Add.'], ['3', 'Ask Claude', '"What\'s pending in FunInvestments?"'], ['4', 'Confirm here', 'Claude prepares; you confirm orders.']];
+export function ConnectCard() {
+  const S = store.S;
+  const on = api.getMode() === 'server' && S.claudeConnected;
+  const how = html`<div class="howto">${HOW.map(([n, t, d]) => html`<div class="howstep" key=${n}><span class="n">${n}</span><b>${t}</b><span class="muted">${d}</span></div>`)}</div>`;
+  return html`<section class="section"><div class="section-head"><h2>${I.spark} Connect Claude</h2>${!on && html`<button class="btn small primary" onClick=${() => { go('account'); setTimeout(() => document.getElementById('connect-claude')?.scrollIntoView({ behavior: 'smooth' }), 150); }}>Connect</button>`}</div>
+    <${ClaudeStatus} steps="1–3"/>
+    ${on ? html`<${SetupFold}>${how}<//>` : how}
+    <p class="muted" style="margin:0;font-size:13.5px">Claude's work stays saved in <button class="linkbtn" style="font-size:13.5px" onClick=${() => go('activity')}>Activity</button>. <${Info} k="claudesaved"/></p></section>`;
+}
 
 function useConnector() {
   const S = store.S;
@@ -630,20 +691,19 @@ export function ConnectSteps({ compact }) {
     <div class="grow" style="min-width:0"><b>${title}</b>${body && html`<div class="muted" style="font-size:13px;margin-top:2px">${body}</div>`}</div>
     ${cta}</div>`;
   if (!hosted) return html`<div class="card stack" style="gap:10px">
-    <b>Open the online app to connect Claude</b>
-    <span class="muted" style="font-size:13.5px">This copy runs only in your browser, so Claude can't reach it. The online app has your connector link.</span>
+    <span class="muted" style="font-size:13.5px">This copy runs only in your browser, so Claude can't reach it.</span>
     <a class="btn primary" href=${ONLINE_APP} target="_blank" rel="noopener">Open online app</a></div>`;
   const short = url.replace(S.user.apiKey, S.user.apiKey.slice(0, 6) + '…');
   const field = (label, shown, value) => html`<div class="cfield"><span class="faint">${label}</span>
     <div class="row" style="gap:8px"><div class="codebox" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${shown}</div>
-    <button class="btn small" onClick=${() => copy(value)}>Copy</button></div></div>`;
+    <button class="btn small" aria-label=${`Copy ${label}`} onClick=${() => copy(value)}>Copy</button></div></div>`;
   return html`<div class="csteps">
     ${step(1, 'Open Connectors in Claude', html`Click <b>+</b> → <b>Add custom connector</b>.`, html`<a class="btn small primary" href=${CLAUDE_CONNECTORS} target="_blank" rel="noopener">Open Claude</a>`)}
     ${step(2, 'Fill in two boxes, then Add', html`<div class="stack" style="gap:8px;margin-top:8px">
         ${field('Name', 'FunInvestments', 'FunInvestments')}
         ${field('Remote MCP server URL', short, url)}
-        <span class="faint" style="font-size:12px">Leave Advanced settings empty. Keep the URL private: it works like a password.</span></div>`, null)}
-    ${step(3, 'Check it works', test?.state === 'ok' ? html`<span class="up">Working</span>` : test?.state === 'bad' ? html`<span class="down">Not working: ${test.msg}</span>` : test?.state === 'run' ? 'Checking…' : compact ? null : 'FunInvestments should be switched on in your Connectors list.',
+        <span class="faint" style="font-size:12px">Keep this URL private. <${Info} k="claudeurl"/></span></div>`, null)}
+    ${step(3, 'Check it works', test?.state === 'ok' ? html`<span class="up">Link works</span>` : test?.state === 'bad' ? html`<span class="down">Not working: ${test.msg}</span>` : test?.state === 'run' ? 'Checking…' : compact ? null : 'FunInvestments should be switched on in your Connectors list.',
       html`<button class="btn small" onClick=${runTest}>Test</button>`, test?.state === 'ok')}
     ${step(4, 'Ask Claude', html`Start a new chat and ask: <span class="codebox inline">${FIRST_ASK}</span>`, html`<button class="btn small" onClick=${() => { copy(FIRST_ASK); window.open?.(CLAUDE_NEW, '_blank', 'noopener'); }}>Copy & open</button>`, S.claudeConnected)}
   </div>`;
@@ -657,15 +717,15 @@ export function ConnectClaude() {
   const cc = `claude mcp add --transport http funinvestments ${url}`;
   const desktop = JSON.stringify({ mcpServers: { funinvestments: { command: 'node', args: ['/path/to/funinvestments/server/mcp-stdio.js'], env: { FI_URL: base.replace(/\/$/, ''), FI_KEY: S.user.apiKey } } } }, null, 2);
   const hide = t => (show ? t : t.split(S.user.apiKey).join(S.user.apiKey.slice(0, 6) + '••••••'));
-  return html`<section class="section" id="connect-claude"><div class="section-head"><h2>${I.spark} Connect Claude</h2><span class="tag ${S.claudeConnected ? 'claude' : ''}">${S.claudeConnected ? 'Connected' : 'Not connected'}</span></div>
-    <${ConnectSteps}/>
-    ${S.activity?.[0] && html`<div class="card row between" style="gap:10px"><span class="muted" style="font-size:13px">Last Claude action: ${S.activity[0].text} · ${ago(S.activity[0].at)}</span><button class="btn small ghost" onClick=${() => go('activity')}>See activity</button></div>`}
-    ${hosted && html`<details class="card"><summary class="muted" style="cursor:pointer;font-size:13.5px">More options: Claude Code, Claude Desktop, your key</summary>
+  return html`<section class="section" id="connect-claude"><div class="section-head"><h2>${I.spark} Connect Claude</h2></div>
+    <${ClaudeStatus}/>
+    ${hosted && S.claudeConnected ? html`<${SetupFold}><${ConnectSteps}/><//>` : html`<${ConnectSteps}/>`}
+    ${hosted && html`<details class="card"><summary class="muted" style="cursor:pointer;font-size:13.5px">More options</summary>
       <div class="stack" style="gap:12px;margin-top:12px">
         <div class="field"><label>Your link</label><div class="row"><div class="codebox" style="flex:1">${hide(url)}</div><button class="btn small ghost" onClick=${() => setShow(!show)}>${show ? 'Hide' : 'Show'}</button></div></div>
         <div class="field"><label>Claude Code (terminal)</label><div class="row"><div class="codebox" style="flex:1">${hide(cc)}</div><button class="btn small" onClick=${() => copy(cc)}>Copy</button></div></div>
         <div class="field"><label>Claude Desktop config</label><div class="row" style="align-items:flex-start"><pre class="codebox" style="flex:1;margin:0;white-space:pre-wrap">${hide(desktop)}</pre><button class="btn small" onClick=${() => copy(desktop)}>Copy</button></div></div>
-        <span class="faint" style="font-size:12px">${tools.length} tools · Claude can prepare orders but only you can confirm them, delete baskets or clear alerts.</span>
+        <span class="faint" style="font-size:12px">${tools.length} tools · Claude prepares, you confirm. <${Info} k="claudesaved"/></span>
       </div></details>`}
   </section>`;
 }
