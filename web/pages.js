@@ -606,20 +606,24 @@ const inrP = n => '₹' + n.toLocaleString('en-IN');
 export function PlansTable() {
   const S = store.S, pro = S.plan === 'pro';
   const PR = S.prices || { monthly: 499, quarterly: 1349, yearly: 4499 };
-  const opts = [['monthly', PR.monthly, 'month', 1, ''], ['quarterly', PR.quarterly, 'quarter', 3, ''], ['yearly', PR.yearly, 'year', 12, 'Best value']];
+  const OPT = { monthly: ['Monthly', PR.monthly, 'month', 1], quarterly: ['Quarterly', PR.quarterly, 'quarter', 3], yearly: ['Yearly', PR.yearly, 'year', 12] };
   const mine = pro ? (S.billing || 'yearly') : null;
-  const start = v => act('set_plan', { plan: 'pro', billing: v }, { ok: `Pro is on (${v}) · demo, no payment` });
-  return html`<div class="tablewrap"><table class="plans-table merged"><thead>
+  const [per, setPer] = useState(mine || 'yearly');
+  const [label, price, unit, m] = OPT[per];
+  const save = PR.monthly * m - price;
+  const start = () => act('set_plan', { plan: 'pro', billing: per }, { ok: `Pro is on (${label.toLowerCase()}) · demo, no payment` });
+  return html`<div class="stack" style="gap:10px">
+    <div class="row between wrap" style="gap:8px"><div class="seg small" role="radiogroup" aria-label="Pro billing">${Object.entries(OPT).map(([v, o]) => html`<button key=${v} role="radio" aria-checked=${per === v} class=${per === v ? 'on' : ''} onClick=${() => setPer(v)}>${o[0]}</button>`)}</div>
+      ${save > 0 ? html`<span class="tag claude">Save ${inrP(save)}</span>` : html`<span class="faint" style="font-size:12px">Cancel anytime</span>`}</div>
+    <div class="tablewrap"><table class="plans-table merged"><thead>
     <tr><th>Feature</th><th class=${pro ? '' : 'cur'}>Free</th><th class=${pro ? 'cur' : ''}>Pro</th></tr>
     <tr class="pricerow"><td>Price</td>
       <td class=${pro ? '' : 'cur'}><div class="pfree"><b class="num">₹0</b><span class="faint">forever</span>
         ${pro ? html`<button class="btn small ghost" onClick=${() => act('set_plan', { plan: 'free' }, { ok: 'Back on Free' })}>Switch</button>` : html`<span class="ok">Your plan ✓</span>`}</div></td>
-      <td class=${pro ? 'cur' : ''}><div class="popts">${opts.map(([v, price, per, m, tag]) => html`<button key=${v} class="popt ${mine === v ? 'on' : ''} ${tag ? 'best' : ''}" onClick=${() => mine !== v && start(v)} aria-pressed=${mine === v}>
-          <span class="pp num">${inrP(price)}<span class="faint"> / ${per}</span></span>
-          <span class="pm">${m > 1 ? `${inrP(Math.round(price / m))} a month · save ${inrP(PR.monthly * m - price)}` : 'cancel anytime'}</span>
-          ${mine === v ? html`<span class="pt ok">Your plan ✓</span>` : tag ? html`<span class="pt">${tag}</span>` : null}</button>`)}</div>
-        ${!pro && html`<span class="faint" style="font-size:11px">Tap a price to start · demo, no payment</span>`}</td></tr></thead>
-    <tbody>${PLAN_ROWS.map(([f, a, b]) => html`<tr key=${f}><td>${f}</td><td class=${pro ? '' : 'cur'}>${cell(a)}</td><td class=${pro ? 'cur' : ''}>${cell(b)}</td></tr>`)}</tbody></table></div>`;
+      <td class=${pro ? 'cur' : ''}><div class="pfree"><b class="num">${inrP(price)}</b><span class="faint">/ ${unit}${m > 1 ? ` · ${inrP(Math.round(price / m))} a month` : ''}</span>
+        ${mine === per ? html`<span class="ok">Your plan ✓</span>` : html`<button class="btn small primary" onClick=${start}>${pro ? `Switch to ${label.toLowerCase()}` : 'Start Pro'}</button>`}</div></td></tr></thead>
+    <tbody>${PLAN_ROWS.map(([f, a, b]) => html`<tr key=${f}><td>${f}</td><td class=${pro ? '' : 'cur'}>${cell(a)}</td><td class=${pro ? 'cur' : ''}>${cell(b)}</td></tr>`)}</tbody></table></div>
+    <span class="faint" style="font-size:11.5px">Demo: no payment is taken.</span></div>`;
 }
 export const goPlans = () => { go('about'); const t = () => document.getElementById('plans')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(t, 120); setTimeout(t, 450); };
 
