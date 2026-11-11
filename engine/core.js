@@ -471,6 +471,8 @@ function checkBasketCount(st, kind) {
   if (kind === 'tracking' && n >= P.maxTracking) throw proError('more tracking baskets');
 }
 const cleanName = (v, fallback) => { const s = String(v ?? '').trim().slice(0, 40); return s || fallback; };
+// Two baskets never share a name ("My basket", "My basket 2", …) so lists can tell them apart.
+const uniqueName = (st, name, exceptId) => { const taken = new Set(st.baskets.filter(b => b.id !== exceptId).map(b => b.name.toLowerCase())); if (!taken.has(name.toLowerCase())) return name; let i = 2; while (taken.has(`${name} ${i}`.toLowerCase())) i++; return `${name} ${i}`; };
 
 // ---------------- operations ----------------
 const OPS = {
@@ -515,7 +517,7 @@ const OPS = {
     for (const sym of res.over) skipped.push({ symbol: sym, name: st.universe[sym].name, why: `Too much in ${STAGE_LABEL[st.universe[sym].stage]} (limit ${probe.limits.maxStageWeight}% of basket)` });
     for (const sym of res.full) skipped.push({ symbol: sym, name: st.universe[sym].name, why: isPro(st) ? `Basket full (${maxStocks} stocks max)` : `Basket full (${maxStocks} stocks max on Free; 12 on Pro)` });
     if (!final.length) throw new ApiError('empty_basket', 'No stocks could be added', { skipped });
-    const b = newBasket(st, { name: cleanName(a.name, kind === 'tracking' ? 'My holdings' : 'My basket'), kind, theme, description: String(a.description || '').slice(0, 140), symbols: final, actor, rules, limits: probe.limits });
+    const b = newBasket(st, { name: uniqueName(st, cleanName(a.name, kind === 'tracking' ? 'My holdings' : 'My basket')), kind, theme, description: String(a.description || '').slice(0, 140), symbols: final, actor, rules, limits: probe.limits });
     if (kind === 'tracking' && a.holdings) {
       for (const h of a.holdings) { const sym = upper(h.symbol); if (final.includes(sym)) b.holdings[sym] = { qty: Math.max(0, Number(h.qty) || 0), avg: Number(h.avg_price) || st.prices[sym] }; }
       b.netInvested = r2(Object.values(b.holdings).reduce((t, h) => t + h.qty * h.avg, 0));
@@ -526,12 +528,16 @@ const OPS = {
     st.onboarded = true;
     track(st, 'basket_created', { source: actor, kind, n: final.length, theme });
     const bt = basketBacktest(st, b).summary;
-    return { basket: basketView(st, b), skipped, backtest: { removalsRight: bt.removalsRight, removalsTotal: bt.removalsTotal, years: `${bt.fromYear}–${bt.toYear}` } };
+    // The person's own stocks, kept or dropped by these rules each June (what they actually picked),
+    // plus the wider test of the same rules on every stock we track in the theme.
+    const mine = backtest(b.rules, HISTORY, NAMES, { symbols: new Set(b.symbols) }).summary;
+    return { basket: basketView(st, b), skipped, backtest: { removalsRight: bt.removalsRight, removalsTotal: bt.removalsTotal, years: `${bt.fromYear}–${bt.toYear}`,
+      mine: { stocks: b.symbols.length, grew: mine.growth.kept, nifty: mine.growth.nifty, beatYears: mine.keptBeatYears, years: mine.yearsCount } } };
   },
 
   update_basket(st, a, actor) {
     const b = getBasket(st, a.basket_id);
-    if (a.name != null) b.name = cleanName(a.name, b.name);
+    if (a.name != null) b.name = uniqueName(st, cleanName(a.name, b.name), b.id);
     if (a.description != null) b.description = String(a.description).slice(0, 140);
     let rescore = false;
     if (a.theme !== undefined) { const t = a.theme === null || a.theme === '' ? null : a.theme; if (t && !THEMES.some(x => x.id === t)) throw new ApiError('bad_theme', `Theme must be one of ${THEMES.map(x => x.id).join(', ')} or null`); b.theme = t; rescore = true; }
@@ -543,7 +549,7 @@ const OPS = {
   duplicate_basket(st, a, actor) {
     const src = getBasket(st, a.basket_id);
     checkBasketCount(st, src.kind);
-    const b = newBasket(st, { name: cleanName(a.name, `${src.name} copy`), kind: src.kind, theme: src.theme, description: src.description, symbols: [...src.symbols], actor, rules: cloneRules(src.rules), limits: { ...src.limits } });
+    const b = newBasket(st, { name: uniqueName(st, cleanName(a.name, `${src.name} copy`)), kind: src.kind, theme: src.theme, description: src.description, symbols: [...src.symbols], actor, rules: cloneRules(src.rules), limits: { ...src.limits } });
     st.baskets.push(b);
     track(st, 'basket_duplicated', {});
     return { basket: basketView(st, b) };
