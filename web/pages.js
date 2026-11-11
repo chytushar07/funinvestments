@@ -1,6 +1,6 @@
 // Pages. Every number comes from the engine snapshot (store.S) or a read op.
 import { html, useState, useEffect, useRef } from './vendor/preact-htm.js';
-import { store, act, read, go, openSheet, copy, toast, confirmDialog } from './store.js';
+import { store, act, read, go, goSheet, openSheet, copy, toast, confirmDialog } from './store.js';
 import * as api from './client.js';
 import { inr, inr2, pct, cls, short, dateLabel, shortName, STATUS, Pill, Src, Avatar, Mock, Chg, I, Sparkline, Stepper, Switch, ProLock, Empty, ruleLimits } from './lib.js';
 import { Info } from './glossary.js';
@@ -16,9 +16,10 @@ function doTodo(t) {
   if (t.kind === 'orders') openSheet({ type: 'review', ids: t.ids });
   else if (t.kind === 'alerts' || t.kind === 'flags') go('alerts');
   else if (t.kind === 'invest') openSheet({ type: 'invest', id: t.basketId });
+  else if (t.kind === 'basket') goSheet('basket-' + t.basketId, { type: 'addstocks', id: t.basketId });
   else if (t.basketId) go('basket-' + t.basketId);
 }
-const TODO_BTN = { orders: 'Review', alerts: 'Open', basket: 'Fix', invest: 'Invest', flags: 'See' };
+const TODO_BTN = { orders: 'Review', alerts: 'Open', basket: 'Add stocks', invest: 'Invest', flags: 'See' };
 export function NextStep() {
   const S = store.S;
   const t = S.todo?.[0];
@@ -247,22 +248,10 @@ export function Stock({ symbol }) {
       <button class="btn small ghost" onClick=${() => confirmDialog({ title: 'Withdraw this flag?', body: 'Any unconfirmed sell it drafted is cancelled.', confirm: 'Withdraw', danger: true, onConfirm: () => act('delete_news_flag', { flag_id: f.id }, { ok: 'Flag withdrawn' }) })}>Withdraw</button></div>`)}</div></section>`}
     <section class="section" data-tour="why"><div class="section-head"><h2>Why this status?</h2><span class="faint" style="font-size:12px">Good · bad · its number</span></div>
       <div class="card list" style="padding:2px 16px">${d.rules.map(r => html`<div class="li" key=${r.id}><span class="dot ${r.band}" aria-label=${r.band}></span><span class="grow"><span class="t">${r.label}${r.critical ? html` <span class="star" title="Must-pass rule">★</span>` : ''} <${Info} k=${r.id}/></span><span class="s num">good ${r.green} · bad ${r.red}${r.enabled ? '' : ' · rule off'}</span></span><b class="num">${r.valueText}</b></div>`)}</div></section>
-    <${ThemeShares} d=${d}/>
     ${d.isCustom && html`<div class="row wrap" style="margin-top:14px;gap:8px"><button class="btn ghost" style="flex:1" onClick=${() => openSheet({ type: 'candidate', symbol: s.symbol })}>Edit stock</button>
       <button class="btn ghost danger" style="flex:1" onClick=${() => confirmDialog({ title: `Delete ${s.symbol}?`, body: 'It leaves your universe. It must not be in any basket.', confirm: 'Delete', danger: true, onConfirm: async () => { const r = await act('delete_candidate', { symbol: s.symbol }, { ok: 'Deleted' }); if (r?.ok) go('explore'); } })}>Delete stock</button></div>`}
     ${d.orders.length > 0 && html`<section class="section"><h2>Orders</h2><div class="card list" style="padding:2px 16px">${d.orders.map(o => html`<${OrderRow} key=${o.id} o=${o}/>`)}</div></section>`}
   </div>`;
-}
-
-function ThemeShares({ d }) {
-  const S = store.S;
-  const [vals, setVals] = useState({});
-  const entries = S.themes.filter(t => d.themes[t.id] != null || d.theme === t.id);
-  if (!entries.length) return null;
-  return html`<section class="section"><div class="section-head"><h2>Theme share <${Info} k="theme"/></h2><span class="faint" style="font-size:12px">Under ${S.defaultLimits.minTheme}% = Sell in that theme</span></div>
-    <div class="card list" style="padding:2px 16px">${entries.map(t => html`<div class="li" key=${t.id}><span class="grow"><span class="t">${t.label}</span><span class="s">% of its business · you can edit</span></span>
-      <input class="input num" style="width:84px;padding:8px 10px" id=${'ts-' + t.id} type="number" min="0" max="100" value=${vals[t.id] ?? d.themes[t.id] ?? ''} onInput=${e => setVals({ ...vals, [t.id]: e.target.value })} aria-label="${t.label} share percent"/>
-      <button class="btn small" disabled=${vals[t.id] == null} onClick=${async () => { const r = await act('set_theme_share', { symbol: d.stock.symbol, theme: t.id, share: vals[t.id] }, { ok: 'Saved' }); if (r?.ok) setVals({}); }}>Save</button></div>`)}</div></section>`;
 }
 
 // A draft's reason is only worth a line when it says more than the BUY / SELL tag already does.
@@ -291,6 +280,18 @@ export function Baskets() {
 }
 
 // ---------- Basket ----------
+// The one thing to do next in a basket, shown as the only primary button under its name.
+function basketAction(b) {
+  const S = store.S;
+  const pending = S.orders.filter(o => o.basketId === b.id && o.status === 'pending');
+  const need = b.limits.minStocks - b.count;
+  if (b.kind === 'tracking') return { label: '+ Add holding', run: () => openSheet({ type: 'holding', id: b.id }) };
+  if (pending.length) return { label: `Review ${pending.length} order${pending.length > 1 ? 's' : ''}`, run: () => openSheet({ type: 'review', ids: pending.map(o => o.id) }) };
+  if (need > 0) return { label: `Add ${need} more stock${need > 1 ? 's' : ''}`, run: () => openSheet({ type: 'addstocks', id: b.id }), why: `A basket needs at least ${b.limits.minStocks} stocks so no single stock gets too big. You can invest once it has ${b.limits.minStocks}.`, claude: true };
+  if (b.needsRebalance) return { label: 'Rebalance', run: () => openSheet({ type: 'rebalance', id: b.id }), why: `Some stocks have drifted ${b.drift.toFixed(0)} points from their target share.` };
+  return { label: b.isInvested ? 'Invest more' : 'Invest', run: () => openSheet({ type: 'invest', id: b.id }), quiet: b.isInvested };
+}
+
 export function Basket({ id }) {
   const S = store.S;
   const b = S.baskets.find(x => x.id === id);
@@ -299,17 +300,20 @@ export function Basket({ id }) {
   useEffect(() => { const f = e => { if (e.detail?.id === id) setTab(e.detail.tab); }; window.addEventListener('fi-tab', f); return () => window.removeEventListener('fi-tab', f); }, [id]);
   if (!b) return html`<${Empty} title="This basket is gone"><span class="muted">It may have been deleted.</span><button class="btn small" onClick=${() => go('baskets')}>All baskets</button></${Empty}>`;
   const tabs = ['overview', 'stocks', 'rules', 'scorecard'];
+  const A = basketAction(b);
   return html`<div>
     <div class="row" style="margin-top:4px"><button class="iconbtn" onClick=${() => go('baskets')} aria-label="Back to baskets">${I.back}</button>
-      <div style="min-width:0;flex:1"><h1 style="font-size:22px">${b.name}</h1><div class="row wrap" style="gap:6px;margin-top:3px"><${Src} s=${b.source}/>${b.editedBy && b.editedBy !== b.source && html`<${Src} s=${b.editedBy} edited/>`}${b.themeLabel && html`<span class="tag">${b.themeLabel}</span>`}${b.kind === 'tracking' && html`<span class="tag">Tracking</span>`}</div></div>
+      <div style="min-width:0;flex:1"><h1 style="font-size:22px">${b.name}</h1>${(b.themeLabel || b.kind === 'tracking') && html`<div class="row wrap" style="gap:6px;margin-top:4px">${b.themeLabel && html`<span class="tag">${b.themeLabel}</span>`}${b.kind === 'tracking' && html`<span class="tag">Tracking</span>`}</div>`}</div>
       ${b.kind === 'model' && html`<button class="btn small editrules" data-tour="editrules" onClick=${() => setTab('rules')}>⚙ Edit rules</button>`}
       <button class="iconbtn" aria-label="Basket options" onClick=${() => openSheet({ type: 'basketmenu', id: b.id })}>${I.more}</button></div>
-    ${b.description && html`<p class="muted" style="margin:10px 0 0;font-size:13.5px">${b.description}</p>`}
-    <section class="stack" style="margin-top:16px;gap:6px">
-      <div class="big num">${b.isInvested ? inr(b.value) : `${b.count} stocks`}</div>
-      <div class="row wrap" style="font-size:13.5px">${b.isInvested ? html`<span class="${cls(b.pnl)} num">${b.pnl >= 0 ? '+' : '−'}${inr(Math.abs(b.pnl))} (${pct(b.returnPct)})</span><span class="muted">vs Nifty 50 <b class=${cls(b.vsNifty)}>${b.vsNifty > 0 ? '+' : ''}${b.vsNifty.toFixed(1)} points</b> <${Info} k="vsnifty"/></span>` : html`<span class="muted">${b.realized ? `Not invested · last exit ${b.realized >= 0 ? 'profit' : 'loss'} ${inr(Math.abs(b.realized))}` : 'Not invested yet'}</span>`}<${Mock}/></div>
+    <section class="bhead">
+      ${b.isInvested ? html`<div class="big num">${inr(b.value)}</div>
+        <div class="row wrap" style="font-size:14px;gap:10px"><span class="${cls(b.pnl)} num">${b.pnl >= 0 ? '+' : '−'}${inr(Math.abs(b.pnl))} (${pct(b.returnPct)})</span><span class="muted">vs Nifty 50 <b class=${cls(b.vsNifty)}>${b.vsNifty > 0 ? '+' : ''}${b.vsNifty.toFixed(1)} pts</b> <${Info} k="vsnifty"/></span></div>`
+      : html`<div class="bstate">${b.kind === 'model' && b.count < b.limits.minStocks ? `${b.count} of ${b.limits.minStocks} stocks` : `${b.count} stock${b.count === 1 ? '' : 's'}`} · ${b.realized ? `not invested · last exit ${b.realized >= 0 ? 'profit' : 'loss'} ${inr(Math.abs(b.realized))}` : 'not invested yet'}</div>`}
+      <button class="btn ${A.quiet ? '' : 'primary'} block" data-tour="primary" onClick=${A.run}>${A.label}</button>
+      ${A.why && html`<p class="muted bwhy">${A.why}${A.claude ? html` <button class="linkbtn" onClick=${() => copy(`Find ${b.limits.minStocks - b.count} more ${b.themeLabel || ''} stocks for my "${b.name}" basket in FunInvestments and add them.`)}>Copy a prompt for Claude</button>` : ''}</p>`}
     </section>
-    <div class="tabs" data-tour="tabs" role="tablist" style="margin-top:16px">${tabs.map(t => html`<button key=${t} role="tab" aria-selected=${tab === t} class=${tab === t ? 'on' : ''} onClick=${() => setTab(t)}>${t[0].toUpperCase() + t.slice(1)}</button>`)}</div>
+    <div class="tabs" data-tour="tabs" role="tablist">${tabs.map(t => html`<button key=${t} role="tab" aria-selected=${tab === t} class=${tab === t ? 'on' : ''} onClick=${() => setTab(t)}>${t[0].toUpperCase() + t.slice(1)}</button>`)}</div>
     ${tab === 'stocks' ? html`<${BasketStocks} b=${b}/>` : tab === 'rules' ? html`<${BasketRules} b=${b}/>` : tab === 'scorecard' ? html`<${Scorecard} b=${b}/>` : html`<${BasketOverview} b=${b} setTab=${setTab}/>`}
   </div>`;
 }
@@ -317,36 +321,26 @@ export function Basket({ id }) {
 function BasketOverview({ b, setTab }) {
   const S = store.S;
   const sw = Object.entries(b.stageWeights).filter(([, w]) => w > 0).sort((x, y) => y[1] - x[1]);
-  const pending = S.orders.filter(o => o.basketId === b.id && o.status === 'pending');
-  const refill = pending.filter(o => o.tag === 'refill');
-  let cta;
-  if (b.kind === 'tracking') cta = html`<button class="btn block" onClick=${() => setTab('stocks')}>Edit holdings</button>`;
-  else if (refill.length) cta = html`<button class="btn primary block" onClick=${() => openSheet({ type: 'review', ids: refill.map(o => o.id) })}>Review replacement</button>`;
-  else if (pending.length) cta = html`<button class="btn primary block" onClick=${() => openSheet({ type: 'review', ids: pending.map(o => o.id) })}>Review ${pending.length} order${pending.length > 1 ? 's' : ''}</button>`;
-  else if (b.isInvested && b.drift > b.limits.driftTrigger) cta = html`<button class="btn primary block" onClick=${() => openSheet({ type: 'rebalance', id: b.id })}>Rebalance</button>`;
-  else cta = html`<button class="btn primary block" onClick=${() => openSheet({ type: 'invest', id: b.id })}>Invest ₹</button>`;
-  const acts = S.decisions.filter(d => d.basketId === b.id).slice(0, 8);
+  const acts = S.decisions.filter(d => d.basketId === b.id).slice(0, 6);
   const journal = S.journal.filter(j => j.basketId === b.id);
   const label = { added: 'Added', removed: 'Taken out', bought: 'Bought', sold: 'Sold', override: 'Kept anyway', refill_add: 'Replacement added', exited: 'Exited basket (sold all)', status_pass: '→ ✓ Buy', status_watch: '→ = Hold', status_remove: '→ ✕ Sell' };
-  return html`<div class="stack" style="margin-top:16px">
-    <div class="row wrap" style="gap:6px">${['pass', 'watch', 'remove'].filter(k => b.counts[k]).map(k => html`<${Pill} key=${k} s=${k} n=${b.counts[k]}/>`)}${b.belowMin && html`<span class="tag">Below ${b.limits.minStocks} stocks</span>`}</div>
-    ${b.kind === 'model' && html`<div class="card stack" style="gap:12px">
+  const notBought = b.isInvested ? b.stocks.filter(x => !x.qty) : [];
+  return html`<div class="stack" style="margin-top:18px;gap:18px">
+    <div class="card list" style="padding:2px 16px">${b.stocks.map(x => html`<button class="li btnrow" key=${x.symbol} onClick=${() => go('stock-' + x.symbol)}><${Avatar} name=${x.name} stage=${x.stage}/>
+      <span class="grow"><span class="t">${x.name}</span><span class="s">${b.kind === 'tracking' || b.isInvested ? (x.qty ? `${x.qty} share${x.qty === 1 ? '' : 's'} · ${inr(x.value)}` : 'Not bought') : b.belowMin ? x.sector : `Planned ${x.target.toFixed(0)}%`}</span></span><${Pill} s=${x.status}/></button>`)}</div>
+    ${notBought.length > 0 && html`<p class="muted" style="margin:-6px 2px 0;font-size:13px">${notBought.map(x => shortName(x.name)).join(', ')} ${notBought.length === 1 ? 'is' : 'are'} in the basket but not bought${notBought.some(x => x.status === 'remove') ? '' : ' (one share cost more than its part)'}.</p>`}
+    ${b.kind === 'model' && b.isInvested && html`<button class="linkbtn" style="align-self:flex-start" onClick=${() => exitBasket(b)}>Exit basket · sell everything</button>`}
+    ${b.kind === 'model' && html`<details class="card fold"><summary>Details</summary><div class="stack" style="gap:12px;margin-top:12px">
       <div class="row between"><span class="eyebrow">Where the money is <${Info} k="segment"/></span><span class="faint" style="font-size:12px">${b.isInvested ? 'Now' : 'Planned'}</span></div>
       <div class="wbar" role="img" aria-label=${sw.map(([s, w]) => `${stageLabel(s)} ${w}%`).join(', ')}>${sw.map(([s, w]) => html`<span key=${s} style="width:${w}%;background:${stageColor(s)}" title="${stageLabel(s)} ${w}%"></span>`)}</div>
       <div class="legend">${sw.map(([s, w]) => html`<span key=${s}><i style="background:${stageColor(s)}"></i>${stageLabel(s)} <b class="num">${w.toFixed(0)}%</b></span>`)}</div>
-      <div class="faint" style="font-size:12px">Limits: ${b.limits.maxStageWeight}% a segment · ${b.limits.maxStockWeight}% a stock · ${b.limits.maxWatchWeight}% a Hold stock <${Info} k="limits"/></div></div>`}
-    <div class="tiles">
-      <div class="tile"><span class="k">${b.kind === 'tracking' ? 'What you paid' : 'Money put in'} <${Info} k="invested"/></span><span class="v">${inr(b.invested)}</span></div>
-      <div class="tile"><span class="k">${b.kind === 'tracking' ? 'Worth now' : 'Cash in basket'}</span><span class="v">${inr(b.kind === 'tracking' ? b.value : b.cash)}</span></div>
-      <div class="tile"><span class="k">Stocks</span><span class="v">${b.count}<span class="muted" style="font-size:14px"> / ${b.limits.minStocks}–${b.limits.maxStocks}</span></span></div>
-      <div class="tile"><span class="k">Off target <${Info} k="offtarget"/></span><span class="v">${b.isInvested && b.kind === 'model' ? b.drift.toFixed(1) + ' points' : '—'}</span></div></div>
-    ${b.belowMin && !refill.length && html`<div class="card stack" style="gap:8px"><b>Needs ${b.limits.minStocks - b.count} more stock${b.limits.minStocks - b.count > 1 ? 's' : ''} <${Info} k="replacement"/></b><span class="muted" style="font-size:13px">${b.refillShort ? 'No other stock passes this basket\'s rules and limits right now. Add your own, or ask Claude to find some.' : 'A basket needs at least ' + b.limits.minStocks + ' stocks so no single stock gets too big. Add them yourself, or ask Claude.'}</span>
-      <div class="row wrap"><button class="btn small primary" onClick=${() => openSheet({ type: 'addstocks', id: b.id })}>Add stocks</button><button class="btn small ghost" onClick=${() => copy(`Find more ${b.themeLabel || ''} stocks for my "${b.name}" basket in FunInvestments and add them with add_candidate.`)}>Copy prompt for Claude</button></div></div>`}
-    ${cta}
-    ${b.kind === 'model' && b.isInvested && html`<div class="row" style="gap:8px"><button class="btn ghost" style="flex:1" onClick=${() => exitBasket(b)}>Exit basket · sell everything</button><${Info} k="exit"/></div>`}
-    ${journal.length > 0 && html`<section class="section"><h2>Decision journal <${Info} k="keepanyway"/></h2><div class="card list" style="padding:2px 16px">${journal.map(j => html`<div class="li" key=${j.id}><span class="grow"><span class="t">${j.name} · ${j.action}</span><span class="s">${j.reason || 'No reason'} · ${short(j.date)}</span></span>
+      <dl class="kv"><dt>Money put in <${Info} k="invested"/></dt><dd>${inr(b.invested)}</dd>${b.cash > 0 ? html`<dt>Cash in basket</dt><dd>${inr(b.cash)}</dd>` : null}
+        <dt>Stocks</dt><dd>${b.count} (needs ${b.limits.minStocks}–${b.limits.maxStocks})</dd>
+        <dt>Limits <${Info} k="limits"/></dt><dd>${b.limits.maxStageWeight}% a segment · ${b.limits.maxStockWeight}% a stock</dd></dl></div></details>`}
+    ${b.kind === 'tracking' && html`<dl class="kv"><dt>What you paid</dt><dd>${inr(b.invested)}</dd><dt>Worth now</dt><dd>${inr(b.value)}</dd></dl>`}
+    ${journal.length > 0 && html`<section><h2>Decision journal <${Info} k="keepanyway"/></h2><div class="card list" style="padding:2px 16px;margin-top:10px">${journal.map(j => html`<div class="li" key=${j.id}><span class="grow"><span class="t">${j.name} · ${j.action}</span><span class="s">${j.reason || 'No reason'} · ${short(j.date)}</span></span>
       <button class="btn small ghost" onClick=${() => openSheet({ type: 'journal', entry: j })}>Edit</button></div>`)}</div></section>`}
-    <section class="section"><h2>Recent activity</h2>${acts.length ? html`<div class="card list" style="padding:2px 16px">${acts.map(d => html`<div class="li" key=${d.id}><span class="grow"><span class="t">${d.name} · ${label[d.action] || d.action}</span><span class="s">${d.trigger || ''} · ${short(d.date)}</span></span><${Src} s=${d.source}/></div>`)}</div>` : html`<span class="muted">Nothing yet.</span>`}</section>
+    ${acts.length > 0 && html`<section><h2>Recent activity</h2><div class="card list" style="padding:2px 16px;margin-top:10px">${acts.map(d => html`<div class="li" key=${d.id}><span class="grow"><span class="t">${d.name} · ${label[d.action] || d.action}</span><span class="s">${d.trigger || ''} · ${short(d.date)}</span></span></div>`)}</div></section>`}
   </div>`;
 }
 
@@ -534,6 +528,7 @@ export function DefaultRules() {
   const R = S.rules; const n = S.baskets.length;
   return html`<div>
     <div class="row" style="margin-top:4px"><button class="iconbtn" onClick=${() => history.back()} aria-label="Back">${I.back}</button><h1>Default rules</h1></div>
+    ${store.ui.draftNew && html`<div class="card tourcta"><div class="grow"><b>Your new basket is waiting</b><div class="muted">It starts with these rules.</div></div><button class="btn primary" onClick=${() => { const d = store.ui.draftNew; store.ui.draftNew = null; openSheet({ type: 'new', draft: d }); }}>Back to it</button></div>`}
     ${pro ? html`<div class="card rulehelp" style="margin-top:12px"><b>Your rules for every new basket</b>
       <span class="muted">These 13 checks rate every stock on Home and Explore, and each new basket starts with them. A basket can then have its own: open it and tap <b>⚙ Edit rules</b>. Tap a rule to change its limits; the switch turns it off.</span></div>` : html`<div class="row between proline" style="margin-top:12px"><span>🔒 Editing rules is a Pro feature</span><button class="linkbtn" onClick=${goPlans}>See plans</button></div>`}
     <section class="section"><div class="section-head"><span class="eyebrow">13 safety rules · defaults <${Info} k="warnings"/></span>

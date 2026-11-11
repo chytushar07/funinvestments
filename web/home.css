@@ -67,3 +67,25 @@
 .li.act-read .faint { font-size: 12px; white-space: nowrap; }
 .act-ic.read { background: none; color: var(--faint); height: 16px; }
 .act-ic.read svg { width: 13px; height: 13px; }
+
+/* Basket page: name → value → one primary action → tabs */
+.bhead { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+.bhead .bstate { font-size: 15px; font-weight: 700; color: var(--muted); }
+.bhead .btn.block { margin-top: 6px; }
+.bhead .bwhy { margin: 0; font-size: 13px; line-height: 1.5; }
+.bhead .bwhy .linkbtn { font-size: 13px; padding: 0; }
+.bhead + .tabs { margin-top: 22px; }
+details.fold > summary { cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; }
+details.fold > summary::after { content: '›'; transform: rotate(90deg); color: var(--faint); }
+details.fold[open] > summary::after { transform: rotate(-90deg); }
+details.fold > summary::-webkit-details-marker { display: none; }
+
+/* Order sheets: one primary with the amount, a quiet "Not now" */
+.quietbtn { align-self: center; font-size: 14px; padding: 10px; color: var(--muted); }
+.numstep.qty input { width: 48px; }
+.orow { gap: 10px; }
+.skipnote { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.skipnote b { color: var(--fg); }
+.li.rulesrow { border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; }
+.numstep.qty button { width: 40px; height: 40px; font-size: 20px; }
+.numstep.qty input { height: 40px; font-size: 16px; }

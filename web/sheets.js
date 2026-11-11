@@ -39,12 +39,20 @@ async function dismiss() {
 
 // Exit = sell everything. Explains, drafts the sells, then the person confirms in the review sheet.
 function exitBasket(b) {
+  const held = b.stocks.filter(x => x.qty > 0);
   confirmDialog({
     title: `Exit ${b.name}?`,
-    body: `All ${b.stocks.filter(x => x.qty > 0).length} holdings are sold at the last price (about ${inr(b.value)}) and the money goes back to your practice cash. Pending orders for this basket are cancelled. The basket and its rules stay, so you can invest again later.`,
-    confirm: 'Review sell orders',
-    onConfirm: async () => { const r = await act('exit_basket', { basket_id: b.id }, { quiet: true }); if (!r?.ok) return; await refresh(); if (r.data.orders.length) openSheet({ type: 'review', ids: r.data.orders.map(o => o.id), exit: { name: b.name, cost: r.data.costBasis } }); else toast('Nothing to sell'); },
+    body: `Your ${held.length} holding${held.length === 1 ? ' is' : 's are'} sold at the last price and about ${inr(b.value)} goes back to your practice cash. The basket and its rules stay, so you can invest again later.`,
+    confirm: 'Review the sells',
+    onConfirm: async () => { const r = await act('exit_basket', { basket_id: b.id }, { quiet: true }); if (!r?.ok) return; await refresh(); if (r.data.orders.length) openSheet({ type: 'review', drafted: true, ids: r.data.orders.map(o => o.id), exit: { name: b.name, cost: r.data.costBasis, cash: b.cash } }); else toast(r.data.returnedCash ? `${inr(r.data.returnedCash)} back to practice cash` : 'Nothing to sell'); },
   });
+}
+
+// Delete: an empty basket gets a plain confirm; one that holds shares says what selling gives back, in ₹.
+async function deleteBasket(b) {
+  const r = await read('delete_preview', { basket_id: b.id });
+  if (!r.ok) { toast(r.error?.message || 'Something went wrong', { err: true }); return; }
+  openSheet({ type: 'delete', id: b.id, p: r.data });
 }
 
 
@@ -57,19 +65,30 @@ function NumStep({ id, v, set, step, clamp, label }) {
     <button type="button" aria-label=${`${label}: more`} onClick=${() => set(x => clamp(x + step))}>+</button></div>`;
 }
 
+// Quantity: − / + and a number you can type. Keeps its own value so quick taps all count.
+function QtyEdit({ value, max, onChange, label }) {
+  const [v, setV] = useState(value);
+  useEffect(() => { setV(value); }, [value]);
+  const set = n => { n = Math.max(1, Math.min(max ?? 99999, Math.floor(n) || 1)); setV(n); onChange(n); };
+  return html`<div class="numstep qty" role="group" aria-label=${label}>
+    <button type="button" aria-label=${`${label}: less`} disabled=${v <= 1} onClick=${() => setV(x => { const n = Math.max(1, x - 1); if (n !== x) onChange(n); return n; })}>−</button>
+    <input class="num" inputmode="numeric" value=${v} aria-label=${label} onChange=${e => set(parseInt(e.target.value, 10))}/>
+    <button type="button" aria-label=${`${label}: more`} disabled=${max != null && v >= max} onClick=${() => setV(x => { const n = Math.min(max ?? 99999, x + 1); if (n !== x) onChange(n); return n; })}>+</button></div>`;
+}
 const warnTxt = n => `${n} warning${n === 1 ? '' : 's'}`;
 const SHEETS = {
   info: InfoSheet,
   // ---------- create basket ----------
   new({ s }) {
     const S = store.S;
-    const [name, setName] = useState(s.name || '');
-    const [desc, setDesc] = useState('');
-    const [theme, setTheme] = useState('auto');
+    const [name, setName] = useState(s.draft?.name ?? s.name ?? '');
+    const [desc, setDesc] = useState(s.draft?.desc || '');
+    const [theme, setTheme] = useState(s.draft?.theme || 'auto');
+    const [themeName, setThemeName] = useState(s.draft?.themeName || '');
     const [q, setQ] = useState('');
     const [mode, setMode] = useState('pick');
     const [paste, setPaste] = useState('');
-    const [pick, setPick] = useState(new Set(s.preset || []));
+    const [pick, setPick] = useState(new Set(s.draft?.pick || s.preset || []));
     const [result, setResult] = useState(null);
     const max = S.planInfo.maxStocks;
     if (result) {
@@ -77,7 +96,7 @@ const SHEETS = {
       const bt = result.backtest, pctRight = bt.removalsTotal ? Math.round(bt.removalsRight / bt.removalsTotal * 100) : 0;
       return html`<div class="stack" style="gap:14px"><h2>${short ? `${result.basket.name} created · add ${short} more` : `${result.basket.name} is ready`}</h2>
       ${short > 0 && html`<span class="muted" style="font-size:13px;margin-top:-6px">A basket needs at least ${minN} stocks, so no single stock gets too big. Add ${short} more yourself, or ask Claude to find some.</span>`}
-      <div class="row wrap" style="gap:6px"><${Pill} s="pass" n=${result.basket.counts.pass}/>${result.basket.counts.watch ? html`<${Pill} s="watch" n=${result.basket.counts.watch}/>` : null}<span class="tag">${result.basket.count} stocks</span>${result.basket.themeLabel && html`<span class="tag">${result.basket.themeLabel}</span>`}</div>
+      <div class="row wrap" style="gap:6px"><${Pill} s="pass" n=${result.basket.counts.pass}/>${result.basket.counts.watch ? html`<${Pill} s="watch" n=${result.basket.counts.watch}/>` : null}<span class="tag">${result.basket.count} stock${result.basket.count === 1 ? '' : 's'}</span>${result.basket.themeLabel && html`<span class="tag">${result.basket.themeLabel}</span>`}</div>
       ${result.skipped.length > 0 && html`<div class="card list" style="padding:2px 16px">${result.skipped.map(x => html`<div class="li" key=${x.symbol}><span class="grow"><span class="t">${x.name || x.symbol} · skipped</span><span class="s">${x.why}</span></span></div>`)}</div>`}
       ${bt.mine ? html`<div class="tile"><span class="k">Past test of your ${bt.mine.stocks} stocks, ${bt.years} <${Info} k="grew"/></span><span class="v">₹100 → ₹${bt.mine.grew}</span><span class="faint" style="font-size:12.5px">kept by these rules each June · Nifty 50: ₹${bt.mine.nifty} · beat the Nifty in ${bt.mine.beatYears} of ${bt.mine.years} years</span></div>` : null}
       <span class="faint" style="font-size:12px;margin-top:-6px">Same rules on every stock we track in this theme: when they said Sell, they were right ${bt.removalsRight} of ${bt.removalsTotal} times (${pctRight}%).</span>
@@ -88,7 +107,8 @@ const SHEETS = {
     const toggle = sym => { const n = new Set(pick); if (n.has(sym)) n.delete(sym); else if (n.size < max) n.add(sym); else { toast(`Max ${max} stocks${S.plan === 'free' ? ' on Free' : ''}`, S.plan === 'free' ? { action: 'See plans', go: 'pricing' } : {}); return; } setPick(n); };
     const symbols = mode === 'pick' ? [...pick] : paste.split(/[\s,;]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
     const create = async () => {
-      const r = await act('create_basket', { name: name.trim() || 'My basket', description: desc, symbols, ...(theme === 'auto' ? {} : { theme: theme === 'none' ? null : theme }) }, { quiet: true });
+      const themeArgs = theme === 'auto' ? {} : theme === 'new' ? (themeName.trim() ? { theme: null, theme_name: themeName.trim() } : {}) : { theme: theme === 'none' ? null : theme };
+      const r = await act('create_basket', { name: name.trim() || 'My basket', description: desc, symbols, ...themeArgs }, { quiet: true });
       if (r?.ok) { await refresh(); setResult(r.data); } else if (r?.error?.skipped) toast(`${r.error.message}: ${r.error.skipped.map(x => `${x.symbol} (${x.why})`).join(', ')}`, { err: true });
     };
     const picked = S.universe.filter(x => pick.has(x.symbol));
@@ -100,7 +120,9 @@ const SHEETS = {
       <div class="field"><label for="nb-desc">Note <span class="faint">(optional)</span></label><input class="input" id="nb-desc" placeholder="What this basket is for" maxlength="140" value=${desc} onInput=${e => setDesc(e.target.value)}/></div>
       <div class="field"><label for="nb-theme">Theme <${Info} k="theme"/></label>
         <select id="nb-theme" class="input quietsel" value=${theme} onChange=${e => setTheme(e.target.value)}>
-          <option value="auto">${autoLabel}</option>${S.themes.map(t => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}<option value="none">No theme</option></select></div>
+          <option value="auto">${autoLabel}</option>${S.themes.map(t => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}<option value="none">No theme</option><option value="new">+ New theme…</option></select>
+        ${theme === 'new' && html`<input class="input" id="nb-theme-name" maxlength="30" placeholder="Theme name, e.g. Railways" value=${themeName} onInput=${e => setThemeName(e.target.value)}/><span class="faint" style="font-size:12px">Your own label. Only AC value chain and Energy check each company's share of business.</span>`}</div>
+      <div class="li rulesrow"><span class="grow"><span class="t">Rules</span><span class="s">${S.rules.metrics.filter(r => r.enabled).length} default rules</span></span>${S.plan === 'pro' ? html`<button class="linkbtn" onClick=${() => { store.ui.draftNew = { name, desc, theme, themeName, pick: [...pick] }; go('rules'); }}>Edit</button>` : html`<button class="linkbtn" onClick=${() => toast('Editing rules is a Pro feature', { action: 'See plans', go: 'pricing' })}>🔒 Edit</button>`}</div>
       <div class="seg">${[['pick', 'Pick stocks'], ['paste', 'Paste symbols']].map(([v, l]) => html`<button key=${v} class=${mode === v ? 'on' : ''} onClick=${() => setMode(v)}>${l}</button>`)}</div>
       ${mode === 'pick' ? html`
         ${picked.length > 0 && html`<div class="picksum"><span><b>${picked.length} selected:</b> ${picked.map(x => shortName(x.name)).join(', ')}</span><button class="linkbtn" onClick=${() => picked.forEach(x => toggle(x.symbol))}>Clear</button></div>`}
@@ -132,8 +154,8 @@ const SHEETS = {
     const S = store.S;
     if (!S.baskets.length) return html`<div class="stack" style="gap:14px"><h2>Add ${shortName(s.name)}</h2><span class="muted">You have no baskets yet.</span><button class="btn primary block" onClick=${() => openSheet({ type: 'new', preset: [s.symbol] })}>Create basket with it</button></div>`;
     return html`<div class="stack" style="gap:14px"><h2>Add ${shortName(s.name)} to</h2>
-      <div class="card list" style="padding:2px 16px">${S.baskets.filter(b => b.kind === 'model').map(b => { const inIt = b.stocks.some(x => x.symbol === s.symbol); const need = Math.max(0, (b.limits?.minStocks || 6) - b.count); return html`<div class="li" key=${b.id}><span class="grow"><span class="t">${b.name}</span><span class="s">${b.count} stocks${need ? html` · <b class="down">needs ${need} more</b>` : ''}${b.themeLabel ? ' · ' + b.themeLabel : ''}</span></span>
-        ${inIt ? html`<span class="muted" style="font-size:13px">Already in ✓</span>` : html`<button class="btn small ${need ? 'primary' : ''}" onClick=${() => act('add_stock', { basket_id: b.id, symbol: s.symbol }, { ok: `Added to ${b.name}` })}>Add</button>`}</div>`; })}</div>
+      <div class="card list" style="padding:2px 16px">${S.baskets.filter(b => b.kind === 'model').map(b => { const inIt = b.stocks.some(x => x.symbol === s.symbol); const need = Math.max(0, (b.limits?.minStocks || 6) - b.count); return html`<div class="li" key=${b.id}><span class="grow"><span class="t">${b.name}</span><span class="s">${!inIt && b.addBlock?.[s.symbol] ? html`<span class="down">Can't add: ${b.addBlock[s.symbol]}</span>` : html`${b.count} stocks${need ? html` · <b class="down">needs ${need} more</b>` : ''}${b.themeLabel ? ' · ' + b.themeLabel : ''}`}</span></span>
+        ${inIt ? html`<span class="muted" style="font-size:13px">Already in ✓</span>` : b.addBlock?.[s.symbol] ? null : html`<button class="btn small ${need ? 'primary' : ''}" onClick=${() => act('add_stock', { basket_id: b.id, symbol: s.symbol }, { ok: `Added to ${b.name}` })}>Add</button>`}</div>`; })}</div>
       <button class="btn ghost block" onClick=${() => openSheet({ type: 'new', preset: [s.symbol] })}>+ New basket with it</button></div>`;
   },
 
@@ -147,13 +169,13 @@ const SHEETS = {
     const rate = x => (b.theme && x.byTheme?.[b.theme] ? { ...x, status: x.byTheme[b.theme].status, points: x.byTheme[b.theme].points, why: x.byTheme[b.theme].reason } : x);
     const ord = { pass: 0, watch: 1, remove: 2 };
     const list = S.universe.filter(x => !have.has(x.symbol)).filter(x => !b.theme || x.themes?.[b.theme] != null || q).filter(x => !q || x.name.toLowerCase().includes(q.toLowerCase()) || x.symbol.toLowerCase().includes(q.toLowerCase()))
-      .map(rate).sort((x, y) => ord[x.status] - ord[y.status] || x.points - y.points);
+      .map(rate).sort((x, y) => !!b.addBlock?.[x.symbol] - !!b.addBlock?.[y.symbol] || ord[x.status] - ord[y.status] || x.points - y.points);
     const max = Math.min(b.limits.maxStocks, S.planInfo.maxStocks), need = Math.max(0, b.limits.minStocks - b.count), isFull = b.count >= max;
     return html`<div class="stack" style="gap:14px"><h2>Add to ${b.name}</h2>
       <span class="muted" style="font-size:13px;margin-top:-6px">${b.count} stock${b.count === 1 ? '' : 's'}${need ? html` · <b class="down">needs ${need} more</b>` : isFull ? ` · full (${max} max${S.plan === 'free' ? ' on Free' : ''})` : ` · room for ${max - b.count} more`}</span>
       <input class="input" id="as-q" placeholder=${b.theme ? `Search ${b.themeLabel} stocks (type to search all)` : 'Search stocks'} value=${q} onInput=${e => setQ(e.target.value)} aria-label="Search"/>
-      <div class="card list pick" style="padding:2px 14px">${list.map(x => html`<div class="li" key=${x.symbol}><${Avatar} name=${x.name} stage=${x.stage}/><span class="grow"><span class="t">${x.name}</span><span class="s">${x.status === 'remove' && x.why ? x.why : `${x.sector} · ${warnTxt(x.points)}`}</span></span><${Pill} s=${x.status}/>
-        ${x.status === 'remove' ? html`<span class="faint" style="font-size:12px;width:44px;text-align:center">Can't add</span>` : html`<button class="btn small" disabled=${isFull} onClick=${() => act('add_stock', { basket_id: b.id, symbol: x.symbol }, { ok: `${shortName(x.name)} added` })}>Add</button>`}</div>`)}</div>
+      <div class="card list pick" style="padding:2px 14px">${list.map(x => html`<div class="li" key=${x.symbol}><${Avatar} name=${x.name} stage=${x.stage}/><span class="grow"><span class="t">${x.name}</span><span class=${b.addBlock?.[x.symbol] ? 's down' : 's'}>${b.addBlock?.[x.symbol] ? `Can't add: ${b.addBlock[x.symbol]}` : `${x.sector} · ${warnTxt(x.points)}`}</span></span><${Pill} s=${x.status}/>
+        ${b.addBlock?.[x.symbol] ? null : html`<button class="btn small" onClick=${() => act('add_stock', { basket_id: b.id, symbol: x.symbol }, { ok: `${shortName(x.name)} added` })}>Add</button>`}</div>`)}</div>
       ${need === 0 && html`<button class="btn primary block" onClick=${closeSheet}>Done</button>`}
       <span class="faint" style="font-size:12px">Ratings use your default rules${b.theme ? ` and the ${b.themeLabel} share rule` : ''}; this basket's own rules decide when you tap Add.</span></div>`;
   },
@@ -165,13 +187,15 @@ const SHEETS = {
     const [amt, setAmt] = useState(50000);
     if (!b) return null;
     const avail = S.cash + b.cash;
-    const draft = async () => { const r = await act('create_order', { basket_id: b.id, side: 'buy', amount: Number(amt) }, { quiet: true }); if (r?.ok) { await refresh(); openSheet({ type: 'review', ids: r.data.orders.map(o => o.id), drafted: true }); } };
-    return html`<div class="stack" style="gap:14px"><h2>Invest in ${b.name}</h2>
-      <div class="chips">${[10000, 25000, 50000].map(v => html`<button key=${v} class="chip ${+amt === v ? 'on' : ''}" onClick=${() => setAmt(v)}>${inr(v)}</button>`)}</div>
+    const need = b.limits.minStocks - b.count;
+    if (need > 0) return html`<div class="stack" style="gap:16px"><h2>Add ${need} more first</h2><p class="muted" style="margin:0">${b.name} has ${b.count} stock${b.count === 1 ? '' : 's'}. A basket needs at least ${b.limits.minStocks} before you invest, so no single stock gets too big.</p>
+      <button class="btn primary block" onClick=${() => openSheet({ type: 'addstocks', id: b.id })}>Add ${need} more stock${need > 1 ? 's' : ''}</button></div>`;
+    const draft = async () => { const r = await act('create_order', { basket_id: b.id, side: 'buy', amount: Number(amt) }, { quiet: true }); if (r?.ok) { await refresh(); openSheet({ type: 'review', ids: r.data.orders.map(o => o.id), drafted: true, skipped: r.data.skipped, amount: Number(amt) }); } };
+    return html`<div class="stack" style="gap:16px"><h2>Invest in ${b.name}</h2>
+      <div class="chips">${[10000, 25000, 50000].filter(v => v <= avail).map(v => html`<button key=${v} class="chip ${+amt === v ? 'on' : ''}" onClick=${() => setAmt(v)}>${inr(v)}</button>`)}</div>
       <div class="field"><label for="inv-amt">Amount</label><input class="input num" id="inv-amt" type="number" inputmode="numeric" min="1" value=${amt} onInput=${e => setAmt(e.target.value)}/></div>
-      ${+amt > avail && html`<span class="down" style="font-size:13px">More than your practice cash (${inr(avail)}).</span>`}
-      <dl class="kv"><dt>Practice cash <${Info} k="practice"/></dt><dd>${inr(avail)}</dd><dt>How it's split</dt><dd>Equal shares · Hold stocks max ${b.limits.maxWatchWeight}%</dd></dl>
-      <div class="sticky-cta"><button class="btn primary block" disabled=${!(+amt > 0) || +amt > avail} onClick=${draft}>Preview orders</button></div></div>`;
+      <p class="muted" style="margin:0;font-size:13.5px">${+amt > avail ? html`<span class="down">More than your practice cash (${inr(avail)}).</span>` : `Split in whole shares across ${b.count} stocks. You have ${inr(avail)} practice cash.`}</p>
+      <div class="sticky-cta"><button class="btn primary block" disabled=${!(+amt > 0) || +amt > avail} onClick=${draft}>Review orders</button></div></div>`;
   },
 
   trade({ s }) {
@@ -185,47 +209,63 @@ const SHEETS = {
     return html`<div class="stack" style="gap:14px"><h2>${s.side === 'buy' ? 'Buy' : 'Sell'} ${u?.name}</h2>
       <div class="row between"><span class="muted">Quantity</span><${Stepper} label="Quantity" value=${qty} min=${1} max=${s.side === 'sell' ? s.held : 9999} onChange=${setQty}/></div>
       <dl class="kv"><dt>Price</dt><dd>${inr2(u?.price)}</dd><dt>Est. value</dt><dd>${inr((u?.price || 0) * qty)}</dd>${s.side === 'sell' && html`<dt>Holding</dt><dd>${s.held} sh</dd>`}<dt>Basket</dt><dd>${S.baskets.find(b => b.id === s.basketId)?.name}</dd></dl>
-      <div class="sticky-cta"><button class="btn primary block" onClick=${draft}>Preview</button></div></div>`;
+      <div class="sticky-cta"><button class="btn primary block" onClick=${draft}>Review order</button></div></div>`;
   },
 
   review({ s }) {
     const S = store.S;
     const [reason, setReason] = useState('');
+    const [keep, setKeep] = useState(false);
+    const [qty, setQty] = useState({}); // edits shown at once, saved in the background
     const orders = s.ids.map(id => S.orders.find(o => o.id === id)).filter(Boolean);
     const pending = orders.filter(o => o.status === 'pending');
-    if (!pending.length) return html`<div class="stack" style="gap:14px"><h2>Nothing to confirm</h2><span class="muted">These orders are already filled or cancelled.</span><button class="btn primary block" onClick=${closeSheet}>Close</button></div>`;
-    const total = pending.reduce((t, o) => t + o.estValue * (o.side === 'buy' ? 1 : -1), 0);
-    const ruleSell = pending.some(o => o.side === 'sell' && (o.tag === 'rules' || o.tag === 'news_only'));
+    if (!pending.length) return html`<div class="stack" style="gap:16px"><h2>Nothing to confirm</h2><span class="muted">These orders are already done or cancelled.</span><button class="btn primary block" onClick=${closeSheet}>Close</button></div>`;
+    const q = o => qty[o.id] ?? o.qty;
+    const val = o => q(o) * o.estPrice * (o.side === 'buy' ? 1.001 : 0.999); // the fill price includes a 0.1% cost, so the totals match what you get
+    const buys = pending.filter(o => o.side === 'buy'), sells = pending.filter(o => o.side === 'sell');
+    const pay = buys.reduce((t, o) => t + val(o), 0), get = sells.reduce((t, o) => t + val(o), 0);
+    const ruleSell = sells.some(o => o.tag === 'rules' || o.tag === 'news_only');
+    const isExit = !!s.exit || pending.every(o => o.tag === 'exit');
+    const back = get + (s.exit?.cash || 0);
+    const n = pending.length, word = `${n} stock${n > 1 ? 's' : ''}`;
+    const title = isExit ? `Sell everything in ${s.exit?.name || 'this basket'}` : buys.length && sells.length ? `Rebalance · ${word}` : sells.length ? `Sell ${n === 1 ? pending[0].name : word}` : `Buy ${n === 1 ? pending[0].name : word}`;
+    const btn = isExit ? `Sell all · ${inr(get)}` : buys.length && sells.length ? `Confirm · buy ${inr(pay)}, sell ${inr(get)}` : sells.length ? `Sell · ${inr(get)}` : `Buy · ${inr(pay)}`;
+    const over = pay - get > S.cash + (S.baskets.find(b => b.id === pending[0].basketId)?.cash || 0) + 1;
+    const setQ = (o, v) => { setQty(x => ({ ...x, [o.id]: v })); act('update_order', { order_id: o.id, qty: v }, { quiet: true }); };
     const confirm = async () => {
       const r = await act('confirm_order', { order_ids: pending.map(o => o.id) }, { quiet: true });
       if (!r?.ok) return;
       closeSheet(); await refresh();
       const ex = r.data.exits?.[0];
-      toast(ex ? `Exited ${ex.name} · ${inr(ex.returnedCash)} back to practice cash · ${ex.profit >= 0 ? 'profit' : 'loss'} ${inr(Math.abs(ex.profit))}` : `${r.data.filled.length} order${r.data.filled.length > 1 ? 's' : ''} done · practice cash ${inr(r.data.cash)}`);
+      toast(ex ? `Exited ${ex.name} · ${inr(ex.returnedCash)} back · ${ex.profit >= 0 ? 'profit' : 'loss'} ${inr(Math.abs(ex.profit))}` : `Done · practice cash ${inr(r.data.cash)}`);
     };
-    const cancelAll = async keep => { for (const o of pending) await read('cancel_order', { order_id: o.id, reason: keep ? (reason || 'Kept anyway') : 'Cancelled by you' }); closeSheet(); await refresh(); toast(keep ? 'Kept · saved to journal' : 'Cancelled'); };
-    const isExit = !!s.exit || pending.every(o => o.tag === 'exit');
-    const proceeds = pending.filter(o => o.side === 'sell').reduce((t, o) => t + o.estValue, 0);
-    return html`<div class="stack" style="gap:14px"><div class="row between"><h2>${isExit ? `Sell everything in ${s.exit?.name || 'this basket'}` : `Confirm ${pending.length} order${pending.length > 1 ? 's' : ''}`}</h2><${Src} s=${pending[0].source}/></div>
-      ${isExit && html`<div class="tiles"><div class="tile"><span class="k">Money back (about)</span><span class="v">${inr(proceeds)}</span></div>${s.exit?.cost ? html`<div class="tile"><span class="k">Profit / loss (about)</span><span class="v ${cls(proceeds - s.exit.cost)}">${proceeds - s.exit.cost >= 0 ? '+' : '−'}${inr(Math.abs(proceeds - s.exit.cost))}</span></div>` : null}</div>`}
-      ${pending.some(o => o.tag === 'news_only') && html`<div class="why" style="margin:0"><span><b>Based on news, not yet in results.</b> The next quarterly results confirm or clear it. <${Info} k="newsflag"/></span></div>`}
-      <div class="card list" style="padding:2px 16px">${pending.map(o => html`<div class="li" key=${o.id}><span class="side ${o.side}">${o.side.toUpperCase()}</span><span class="grow"><span class="t">${o.name}</span><span class="s">× ${inr2(o.estPrice)}${orderWhy(o, o.tag === 'news_only') ? ` · ${orderWhy(o, o.tag === 'news_only')}` : ''}</span></span>
-        ${o.tag === 'exit' ? html`<b class="num">${o.qty} sh</b>` : html`<${Stepper} label="Quantity for ${o.name}" value=${o.qty} min=${1} max=${o.side === 'sell' ? o.qty : 9999} onChange=${v => act('update_order', { order_id: o.id, qty: v })}/>`}
-        <button class="iconlink" aria-label="Cancel ${o.name}" onClick=${() => act('cancel_order', { order_id: o.id, reason: 'Cancelled by you' }, { ok: 'Order cancelled' })}>${I.x}</button></div>`)}</div>
-      <dl class="kv"><dt>${total >= 0 ? 'You pay (about)' : 'You get (about)'}</dt><dd>${inr(Math.abs(total))}</dd><dt>Practice cash now <${Info} k="practice"/></dt><dd>${inr(S.cash)}</dd><dt>Price used</dt><dd>Last close ± 0.1%</dd></dl>
-      ${ruleSell && html`<div class="field"><label for="keep-reason">Keep anyway? Add a reason <${Info} k="keepanyway"/></label><input class="input" id="keep-reason" placeholder="e.g. Debt is for a new plant" value=${reason} onInput=${e => setReason(e.target.value)}/></div>`}
-      <div class="sticky-cta stack" style="gap:8px"><button class="btn primary block" onClick=${confirm}>Confirm</button>
-        <button class="btn ghost block" onClick=${() => cancelAll(ruleSell)}>${ruleSell ? 'Keep anyway' : 'Cancel all'}</button></div></div>`;
+    const notNow = () => dismiss();
+    const keepAnyway = async () => { for (const o of pending) await read('cancel_order', { order_id: o.id, reason: reason || 'Kept anyway' }); closeSheet(); await refresh(); toast('Kept · noted in the decision journal'); };
+    return html`<div class="stack" style="gap:16px"><h2>${title}</h2>
+      ${isExit && s.exit?.cost ? html`<p class="muted" style="margin:-6px 0 0">About ${inr(back)} back to practice cash · ${back - s.exit.cost >= 0 ? 'profit' : 'loss'} <b class=${cls(back - s.exit.cost)}>${inr(Math.abs(back - s.exit.cost))}</b> on ${inr(s.exit.cost)} put in.</p>` : null}
+      ${pending.some(o => o.tag === 'news_only') && html`<p class="muted" style="margin:-6px 0 0">Based on news, not yet in results. The next quarterly results confirm or clear it. <${Info} k="newsflag"/></p>`}
+      <div class="card list" style="padding:2px 16px">${pending.map(o => html`<div class="li orow" key=${o.id}>
+        <span class="grow"><span class="t">${o.name}</span><span class="s">${o.side === 'sell' ? 'Sell' : 'Buy'} · ${inr2(o.estPrice)} a share · ${inr(val(o))}</span>${orderWhy(o, true) && !['invest', 'exit', 'rebalance'].includes(o.tag) ? html`<span class="s">${orderWhy(o, true)}</span>` : null}</span>
+        ${o.tag === 'exit' ? html`<b class="num">${o.qty} sh</b>` : html`<${QtyEdit} label=${`Shares of ${o.name}`} value=${q(o)} max=${o.side === 'sell' ? o.qty : undefined} onChange=${v => setQ(o, v)}/>`}
+        ${n > 1 && html`<button class="iconlink" aria-label=${`Remove ${o.name} from these orders`} onClick=${() => act('cancel_order', { order_id: o.id, reason: 'Removed by you' }, { quiet: true }).then(() => refresh())}>${I.x}</button>`}</div>`)}</div>
+      ${s.skipped?.length > 0 && html`<div class="skipnote"><b>Not bought</b>${s.skipped.map(x => html`<span key=${x.symbol}>${x.name}: ${x.why}</span>`)}</div>`}
+      ${s.amount ? html`<p class="faint" style="margin:0;font-size:12.5px">${inr(pay)} of ${inr(s.amount)} · the rest stays as practice cash.</p>` : null}
+      ${over && html`<span class="down" style="font-size:13px">More than your practice cash (${inr(S.cash)}). Lower a quantity.</span>`}
+      <div class="sticky-cta stack" style="gap:6px"><button class="btn primary block" disabled=${over} onClick=${confirm}>${btn}</button>
+        <button class="linkbtn quietbtn" onClick=${notNow}>Not now</button>
+        ${ruleSell && !keep && html`<button class="linkbtn quietbtn" onClick=${() => setKeep(true)}>Keep the stock anyway…</button>`}
+        ${ruleSell && keep && html`<div class="field"><label for="keep-reason">Why keep it? <${Info} k="keepanyway"/></label><input class="input" id="keep-reason" placeholder="e.g. Debt is for a new plant" value=${reason} onInput=${e => setReason(e.target.value)}/><button class="btn block" style="margin-top:8px" onClick=${keepAnyway}>Keep and note it</button></div>`}</div></div>`;
   },
 
   rebalance({ s }) {
     const [d, setD] = useState(null);
     useEffect(() => { read('rebalance_plan', { basket_id: s.id }).then(r => r.ok && setD(r.data)); }, [s.id]);
     if (!d) return html`<h2>Rebalance</h2><div class="sk" style="height:120px"></div>`;
-    const draft = async () => { const r = await act('rebalance_plan', { basket_id: s.id, draft: true }, { quiet: true }); if (r?.ok) { await refresh(); if (r.data.orders.length) openSheet({ type: 'review', ids: r.data.orders.map(o => o.id), drafted: true }); else { closeSheet(); toast('Already on target'); } } };
-    return html`<div class="stack" style="gap:14px"><h2>Rebalance</h2><div class="tablewrap"><table><thead><tr><th>Stock</th><th>Now</th><th>Target</th><th>Change</th></tr></thead><tbody>
-      ${d.rows.map(r => html`<tr key=${r.symbol}><td>${shortName(r.name)}</td><td>${r.actual.toFixed(1)}%</td><td>${r.target.toFixed(1)}%</td><td class=${cls(-r.diff)}>${r.diff > 0 ? '−' : '+'}${Math.abs(r.diff).toFixed(1)}</td></tr>`)}</tbody></table></div>
-      <div class="sticky-cta"><button class="btn primary block" onClick=${draft}>Draft orders</button></div></div>`;
+    if (!d.trades.length) return html`<div class="stack" style="gap:16px"><h2>Nothing to rebalance</h2><p class="muted" style="margin:0">The basket is as close to its targets as whole shares allow.</p><button class="btn primary block" onClick=${closeSheet}>OK</button></div>`;
+    const draft = async () => { const r = await act('rebalance_plan', { basket_id: s.id, draft: true }, { quiet: true }); if (r?.ok) { await refresh(); if (r.data.orders.length) openSheet({ type: 'review', ids: r.data.orders.map(o => o.id), drafted: true }); else { closeSheet(); toast('Nothing to rebalance'); } } };
+    return html`<div class="stack" style="gap:16px"><h2>Rebalance</h2><p class="muted" style="margin:-6px 0 0">Bring each stock back near its target share.</p>
+      <div class="card list" style="padding:2px 16px">${d.trades.map(t => html`<div class="li" key=${t.symbol}><span class="side ${t.side}">${t.side.toUpperCase()}</span><span class="grow"><span class="t">${t.name}</span><span class="s">${t.qty} share${t.qty === 1 ? '' : 's'} · now ${t.actual.toFixed(0)}%, target ${t.target.toFixed(0)}%</span></span><b class="num">${inr(t.est)}</b></div>`)}</div>
+      <div class="sticky-cta"><button class="btn primary block" onClick=${draft}>Review orders</button></div></div>`;
   },
 
   // ---------- flags ----------
@@ -316,23 +356,33 @@ const SHEETS = {
   basketmenu({ s }) {
     const b = store.S.baskets.find(x => x.id === s.id);
     if (!b) return null;
-    const del = () => confirmDialog({
-      title: `Delete ${b.name}?`,
-      body: b.kind === 'model' && b.isInvested ? `Its holdings are sold at the last price and about ${inr(b.value)} goes back to your practice cash. Pending orders are cancelled. This can't be undone.` : 'Pending orders and alerts for it are removed. This can\'t be undone.',
-      confirm: 'Delete basket', danger: true,
-      onConfirm: async () => { const r = await act('delete_basket', { basket_id: b.id }, { ok: d => `Deleted${d.returnedCash ? ` · ${inr(d.returnedCash)} back to cash` : ''}` }); if (r?.ok) go('baskets'); },
-    });
+    const del = () => (b.kind === 'model' && b.isInvested ? deleteBasket(b) : confirmDialog({
+      title: `Delete ${b.name}?`, body: 'Its pending orders and alerts go too. This can\'t be undone.', confirm: 'Delete basket', danger: true,
+      onConfirm: async () => { const r = await act('delete_basket', { basket_id: b.id }, { ok: 'Deleted' }); if (r?.ok) go('baskets'); },
+    }));
     const S = store.S, pro = S.plan === 'pro';
     const full = !pro && S.baskets.filter(x => x.kind === b.kind).length >= (b.kind === 'model' ? S.planInfo.maxBaskets : S.planInfo.maxTracking);
     const dup = async () => { if (full) { toast(`Free plan: 1 ${b.kind === 'model' ? '' : 'tracking '}basket. Pro has unlimited.`, { action: 'See plans', go: 'pricing' }); return; } const r = await act('duplicate_basket', { basket_id: b.id }, { ok: d => `Duplicated as ${d.basket.name}` }); if (r?.ok) go('basket-' + r.data.basket.id); };
     return html`<div class="stack" style="gap:6px"><h2 style="margin-bottom:6px">${b.name}</h2>
       ${b.kind === 'model' && html`<button class="menuitem" onClick=${() => { closeSheet(); setTimeout(() => window.dispatchEvent(new CustomEvent('fi-tab', { detail: { id: b.id, tab: 'rules' } })), 0); }}>⚙ Edit rules</button>`}
       <button class="menuitem" onClick=${() => openSheet({ type: 'editbasket', id: b.id })}>Edit name, note and theme</button>
-      ${b.kind === 'model' && html`<button class="menuitem" onClick=${() => openSheet({ type: 'invest', id: b.id })}>Invest ₹</button>`}
+      ${b.kind === 'model' && !b.belowMin && html`<button class="menuitem" onClick=${() => openSheet({ type: 'invest', id: b.id })}>${b.isInvested ? 'Invest more' : 'Invest'}</button>`}
       ${b.kind === 'model' && b.isInvested && html`<button class="menuitem" onClick=${() => exitBasket(b)}>Exit basket · sell everything</button>`}
       <button class="menuitem" onClick=${dup}>Duplicate${full ? html` <span class="faint" style="font-size:12px">🔒 Pro</span>` : ''}</button>
       ${pro && html`<button class="menuitem" onClick=${() => confirmDialog({ title: 'Reset rules to default?', body: 'Thresholds, switches and limits go back to your default rules for this basket.', confirm: 'Reset', onConfirm: () => act('reset_rules', { basket_id: b.id }, { ok: 'Rules reset' }) })}>Reset rules</button>`}
       <button class="menuitem danger" onClick=${del}>Delete basket</button></div>`;
+  },
+
+  delete({ s }) {
+    const b = store.S.baskets.find(x => x.id === s.id), p = s.p;
+    if (!b) return null;
+    const sellDelete = async () => { const r = await act('delete_basket', { basket_id: b.id, sell_all: true }, { ok: d => `Sold and deleted · ${inr(d.returnedCash)} back to practice cash` }); if (r?.ok) go('baskets'); };
+    return html`<div class="stack" style="gap:16px"><h2>Delete ${b.name}?</h2>
+      <p class="muted" style="margin:0">It still holds ${p.holdings} stock${p.holdings === 1 ? '' : 's'}. To delete it, everything is sold at the last price first.</p>
+      <dl class="kv"><dt>Money back (about)</dt><dd>${inr(p.moneyBack)}</dd><dt>${p.profit >= 0 ? 'Profit' : 'Loss'} (about)</dt><dd class=${cls(p.profit)}>${inr(Math.abs(p.profit))}</dd><dt>You put in</dt><dd>${inr(p.cost)}</dd></dl>
+      <div class="sticky-cta stack" style="gap:6px"><button class="btn dangerfill block" onClick=${sellDelete}>Sell everything and delete</button>
+        <button class="btn block" onClick=${closeSheet}>Keep it</button>
+        <button class="linkbtn quietbtn" onClick=${() => exitBasket(b)}>Only sell, keep the basket</button></div></div>`;
   },
 
   editbasket({ s }) {
