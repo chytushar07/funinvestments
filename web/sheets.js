@@ -140,7 +140,7 @@ const SHEETS = {
       <div class="chips">${[10000, 25000, 50000].map(v => html`<button key=${v} class="chip ${+amt === v ? 'on' : ''}" onClick=${() => setAmt(v)}>${inr(v)}</button>`)}</div>
       <div class="field"><label for="inv-amt">Amount</label><input class="input num" id="inv-amt" type="number" inputmode="numeric" min="1" value=${amt} onInput=${e => setAmt(e.target.value)}/></div>
       ${+amt > avail && html`<span class="down" style="font-size:13px">More than your practice cash (${inr(avail)}).</span>`}
-      <dl class="kv"><dt>Practice cash <${Info} k="practice"/></dt><dd>${inr(avail)}</dd><dt>How it's split</dt><dd>Equal shares · Watch stocks max ${b.limits.maxWatchWeight}%</dd></dl>
+      <dl class="kv"><dt>Practice cash <${Info} k="practice"/></dt><dd>${inr(avail)}</dd><dt>How it's split</dt><dd>Equal shares · Hold stocks max ${b.limits.maxWatchWeight}%</dd></dl>
       <div class="sticky-cta"><button class="btn primary block" disabled=${!(+amt > 0) || +amt > avail} onClick=${draft}>Preview orders</button></div></div>`;
   },
 
@@ -265,6 +265,7 @@ const SHEETS = {
     });
     const dup = async () => { const r = await act('duplicate_basket', { basket_id: b.id }, { ok: 'Duplicated' }); if (r?.ok) go('basket-' + r.data.basket.id); };
     return html`<div class="stack" style="gap:6px"><h2 style="margin-bottom:6px">${b.name}</h2>
+      ${b.kind === 'model' && html`<button class="menuitem" onClick=${() => { closeSheet(); setTimeout(() => window.dispatchEvent(new CustomEvent('fi-tab', { detail: { id: b.id, tab: 'rules' } })), 0); }}>⚙ Edit rules</button>`}
       <button class="menuitem" onClick=${() => openSheet({ type: 'editbasket', id: b.id })}>Edit name, note and theme</button>
       ${b.kind === 'model' && html`<button class="menuitem" onClick=${() => openSheet({ type: 'invest', id: b.id })}>Invest ₹</button>`}
       ${b.kind === 'model' && b.isInvested && html`<button class="menuitem" onClick=${() => exitBasket(b)}>Exit basket · sell everything</button>`}

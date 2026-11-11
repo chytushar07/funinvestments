@@ -7,7 +7,7 @@ const firstBasket = () => store.S?.baskets.find(b => b.kind === 'model') || stor
 
 export const STEPS = [
   { route: 'home', sel: '[data-tour="search"]', t: 'Find any stock', b: () => `Search ${store.S?.universe.length || 55} Indian stocks by name, symbol or sector, like "Energy" or "Voltas".` },
-  { route: 'home', sel: '[data-tour="movers"]', t: 'Browse stocks', b: 'Rows of stocks you can swipe through. Each card shows the price, today\'s change and a status: ✓ Pass, ! Watch or ✕ Remove. Tap a card to see why.' },
+  { route: 'home', sel: '[data-tour="movers"]', t: 'Browse stocks', b: 'Rows of stocks you can swipe through. Each card shows the price, today\'s change and what your rules say: ✓ Buy, = Hold or ✕ Sell. Tap a card to see why.' },
   { route: 'home', sel: '[data-tour="plan"]', t: 'Free or Pro', b: 'Switch plans here to see what Pro unlocks. It\'s a demo: no payment is taken.' },
   { route: 'home', sel: '[data-tour="create"]', t: 'Create a basket', b: 'A basket is a small group of stocks you invest in together, with its own safety rules. Pick stocks by hand here.' },
   { route: 'home', sel: '[data-tour="claude"]', t: 'Or let Claude build it', b: 'Copy a prompt into Claude after connecting it once. Claude researches and the basket appears here. Claude can prepare orders, but only you can confirm them.' },

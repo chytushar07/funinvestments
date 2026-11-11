@@ -12,6 +12,9 @@ const NAMES = Object.fromEntries(STOCKS.map(s => [s.symbol, s.name]));
 const STAGE_LABEL = Object.fromEntries(STAGES.map(s => [s.id, s.label]));
 const THEME_LABEL = Object.fromEntries(THEMES.map(t => [t.id, t.label]));
 
+// Pro prices in ₹ (one source for the website, tooltips and Claude's upgrade hint)
+export const PRICES = { monthly: 499, quarterly: 1349, yearly: 4499 };
+export const PRICE_TEXT = 'Pro is ₹499/month, ₹1,349/quarter or ₹4,499/year, for unlimited baskets';
 export const PLANS = {
   free: { label: 'Free', maxBaskets: 1, maxTracking: 1, maxStocks: 8, flagsPerMonth: 3, checks: 'weekly' },
   pro: { label: 'Pro', maxBaskets: Infinity, maxTracking: Infinity, maxStocks: 12, flagsPerMonth: Infinity, checks: 'daily' },
@@ -38,7 +41,7 @@ const FREE_ALTERNATIVE = {
 const proError = feature => new ApiError('pro_feature', `Pro feature: ${feature}`, {
   upgrade: '#pricing', feature,
   free_alternative: FREE_ALTERNATIVE[feature] || (feature.startsWith('more than') ? 'Free allows fewer of these; Pro removes the limit.' : 'Available on Free in a simpler form.'),
-  how_to_upgrade: 'Pro is ₹199/month or ₹1,999/year. In this demo the user can switch plans on the FunInvestments Home page (no payment).',
+  how_to_upgrade: PRICE_TEXT + '. In this demo the user can switch plans on the FunInvestments Home page (no payment).',
 });
 
 // ---------------- state ----------------
@@ -151,7 +154,7 @@ export function refillPlan(st, basket) {
       const trial = [...current, c.u.symbol];
       const sw = stageWeights(st, targetWeights(st, basket, trial).weights);
       if ((sw[c.u.stage] || 0) > L.maxStageWeight + 0.01) { res.skipped.push({ symbol: c.u.symbol, name: c.u.name, tier, why: `${STAGE_LABEL[c.u.stage] || c.u.stage} already at its ${L.maxStageWeight}% limit` }); continue; }
-      res.picks.push({ symbol: c.u.symbol, name: c.u.name, tier, points: c.s.points, stage: c.u.stage, why: tier === 'pass' ? `Pass · ${c.s.points} warnings` : `Watch · ${c.s.points} warnings · max ${L.maxWatchWeight}% of basket` });
+      res.picks.push({ symbol: c.u.symbol, name: c.u.name, tier, points: c.s.points, stage: c.u.stage, why: tier === 'pass' ? `Buy · ${c.s.points} warnings` : `Hold · ${c.s.points} warnings · max ${L.maxWatchWeight}% of basket` });
       current = trial;
     }
   }
@@ -218,7 +221,7 @@ export function execute(order, quote, adtvCr) {
 
 // ---------------- checks (scheduler) ----------------
 const DAILY_RULES = new Set(DEFAULT_RULES.filter(r => r.cadence === 'daily').map(r => r.id));
-const STATUS_LABEL = { pass: '✓ Pass', watch: '! Watch', remove: '✕ Remove' };
+const STATUS_LABEL = { pass: '✓ Buy', watch: '= Hold', remove: '✕ Sell' };
 
 export function checkBasket(st, b, kind) {
   const changes = [];
@@ -244,15 +247,15 @@ export function checkBasket(st, b, kind) {
     const why = [s.reasons.join(' · '), ...ruleLines(st, b, sym).filter(l => l.band === 'red' || l.band === 'amber').map(l => `${l.label}: ${l.valueText} (${l.band})`)];
     if (s.status === 'remove') {
       const h = b.holdings[sym];
-      if (b.kind === 'tracking') addAlert(st, { basketId: b.id, symbol: sym, type: 'critical', critical: true, text: `${name} → ✕ Remove · consider selling in your broker`, why });
+      if (b.kind === 'tracking') addAlert(st, { basketId: b.id, symbol: sym, type: 'critical', critical: true, text: `${name} → ✕ Sell · consider selling in your broker`, why });
       else if (h && h.qty > 0) {
         let order = st.orders.find(o => o.basketId === b.id && o.symbol === sym && o.side === 'sell' && o.status === 'pending');
         if (order) { order.tag = 'rules'; order.reason = `Rules: ${s.reasons[0]}`; order.removeAfter = true; }
         else order = makeOrder(st, { basketId: b.id, symbol: sym, side: 'sell', qty: h.qty, source: 'rules', tag: 'rules', removeAfter: true, reason: `Rules: ${s.reasons[0]}` });
-        addAlert(st, { basketId: b.id, symbol: sym, type: 'critical', critical: true, text: `${name} → ✕ Remove · sell order ready to review`, why, action: { kind: 'orders', ids: [order.id] } });
+        addAlert(st, { basketId: b.id, symbol: sym, type: 'critical', critical: true, text: `${name} → ✕ Sell · sell order ready to review`, why, action: { kind: 'orders', ids: [order.id] } });
       } else {
         removeFromBasket(st, b, sym, s.reasons[0], 'rules');
-        addAlert(st, { basketId: b.id, symbol: sym, type: 'critical', critical: true, text: `${name} → ✕ Remove · taken out of the basket`, why });
+        addAlert(st, { basketId: b.id, symbol: sym, type: 'critical', critical: true, text: `${name} → ✕ Sell · taken out of the basket`, why });
       }
     } else addAlert(st, { basketId: b.id, symbol: sym, type: 'status', text: `${name} ${STATUS_LABEL[prev] || '—'} → ${STATUS_LABEL[s.status]}`, why });
   }
@@ -576,7 +579,7 @@ const OPS = {
     const max = Math.min(b.limits.maxStocks, plan(st).maxStocks);
     if (b.symbols.length >= max) throw isPro(st) ? new ApiError('limit', `Max ${max} stocks`) : proError(`more than ${max} stocks`);
     const s = scoreIn(st, b, sym);
-    if (b.kind === 'model' && s.status === 'remove') throw new ApiError('rule_block', `${u.name} is ✕ Remove here: ${s.reasons[0]}`);
+    if (b.kind === 'model' && s.status === 'remove') throw new ApiError('rule_block', `${u.name} is rated ✕ Sell here: ${s.reasons[0]}`);
     if (b.kind === 'model') {
       const sw = stageWeights(st, targetWeights(st, b, [...b.symbols, sym]).weights);
       if ((sw[u.stage] || 0) > b.limits.maxStageWeight + 0.01 && b.symbols.length + 1 >= b.limits.minStocks) throw new ApiError('rule_block', `${STAGE_LABEL[u.stage]} would be ${sw[u.stage]}% (cap ${b.limits.maxStageWeight}%)`);
@@ -647,7 +650,7 @@ const OPS = {
     track(st, ex ? 'candidate_updated' : 'candidate_added', { source: actor });
     for (const b of st.baskets) if (b.symbols.includes(sym)) checkBasket(st, b, 'rules');
     const s = scoreStock(st.universe[sym], st.rules);
-    return { stock: { symbol: sym, name: st.universe[sym].name, status: s.status, points: s.points, reasons: s.reasons, missing: s.missingCount }, note: s.missingCount >= 3 ? 'Missing numbers → Watch until filled' : undefined };
+    return { stock: { symbol: sym, name: st.universe[sym].name, status: s.status, points: s.points, reasons: s.reasons, missing: s.missingCount }, note: s.missingCount >= 3 ? 'Missing numbers → Hold until filled' : undefined };
   },
 
   delete_candidate(st, a) {
@@ -761,7 +764,7 @@ const OPS = {
       if (side === 'sell' && qty > held) throw new ApiError('bad_qty', `You hold ${held}`);
       if (side === 'buy' && !b.symbols.includes(sym)) {
         if (b.symbols.length >= b.limits.maxStocks) throw new ApiError('limit', `Max ${b.limits.maxStocks} stocks`);
-        if (scoreIn(st, b, sym).status === 'remove') throw new ApiError('rule_block', `${st.universe[sym].name} is ✕ Remove in this basket`);
+        if (scoreIn(st, b, sym).status === 'remove') throw new ApiError('rule_block', `${st.universe[sym].name} is rated ✕ Sell in this basket`);
       }
       out.push(makeOrder(st, { basketId: b.id, symbol: sym, side, qty, source: actor, tag: 'manual', group, addOnFill: side === 'buy' && !b.symbols.includes(sym), removeAfter: side === 'sell' && qty === held && !!a.remove_after, reason: a.reason || (side === 'sell' ? 'Sell' : 'Buy') }));
     }
@@ -972,7 +975,7 @@ const OPS = {
       if (v.flags.length || v.status === 'remove' || pending || v.status !== v.liveStatus) needs.push({ symbol: s, name: v.name, stage: v.stage, status: v.liveStatus, flag: v.flags[0]?.label || null, basketId: b.id, pending });
     }
     return {
-      clock: st.clock, plan: st.plan, planInfo: PLANS[st.plan], user: st.user, cash: st.cash, startingCash: st.startingCash,
+      clock: st.clock, plan: st.plan, planInfo: PLANS[st.plan], prices: PRICES, billing: st.billing || null, user: st.user, cash: st.cash, startingCash: st.startingCash,
       nifty: st.nifty, niftyChange: r2(((st.nifty - st.niftyPrev) / st.niftyPrev) * 100),
       baskets: st.baskets.map(b => basketView(st, b)), orders: st.orders.slice(0, 150), alerts: st.alerts.slice(0, 150),
       unread: st.alerts.filter(a => !a.read).length, pending: st.orders.filter(o => o.status === 'pending').length,
@@ -1001,7 +1004,8 @@ const OPS = {
   set_plan(st, a) {
     st.plan = a.plan === 'pro' ? 'pro' : 'free';
     for (const b of st.baskets) b.limits.maxStocks = Math.min(12, PLANS[st.plan].maxStocks);
-    track(st, st.plan === 'pro' ? 'pro_started' : 'pro_ended', { billing: a.billing || 'yearly' });
+    st.billing = st.plan === 'pro' ? (PRICES[a.billing] ? a.billing : 'yearly') : null;
+    track(st, st.plan === 'pro' ? 'pro_started' : 'pro_ended', { billing: st.billing || 'none' });
     return { plan: st.plan };
   },
   set_notif(st, a) {

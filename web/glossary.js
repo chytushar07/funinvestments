@@ -4,9 +4,9 @@ import { openSheet } from './store.js';
 
 export const GLOSSARY = {
   // ---- statuses & scoring ----
-  status: { t: 'Pass, Watch, Remove', b: 'How a stock stands against this basket\'s rules.', list: ['✓ Pass: no serious warning signs.', '! Watch: some warning signs. It can stay, but at most 10% of the basket.', '✕ Remove: breaks a must-pass rule or has too many warnings. The app suggests selling it.'] },
-  warnings: { t: 'Warnings', b: 'Each rule shows green, amber or red. Amber adds 1 warning, red adds 2.', list: ['0–3 warnings: Pass', '4–8 warnings: Watch', 'More than 8: Remove'] },
-  mustpass: { t: 'Must-pass rule ★', b: 'The 5 most important safety rules. A single red on any of them means Remove, however good the rest looks.', list: ['Daily trading', 'Owner shares pledged', 'Debt vs equity', 'Interest cover', 'Loss-making years'] },
+  status: { t: 'Buy, Hold, Sell', b: 'What this basket\'s rules say about a stock. They are your rules, not advice.', list: ['✓ Buy: passes the rules. Fine to buy or keep.', '= Hold: some warning signs. Keep it, but don\'t add more (at most 10% of the basket).', '✕ Sell: breaks a must-pass rule or has too many warnings. The app prepares a sell for you to confirm.'] },
+  warnings: { t: 'Warnings', b: 'Each rule shows green, amber or red. Amber adds 1 warning, red adds 2.', list: ['0–3 warnings: Buy', '4–8 warnings: Hold', 'More than 8: Sell'] },
+  mustpass: { t: 'Must-pass rule ★', b: 'The 5 most important safety rules. A single red on any of them means Sell, however good the rest looks.', list: ['Daily trading', 'Owner shares pledged', 'Debt vs equity', 'Interest cover', 'Loss-making years'] },
   // ---- the 13 rules ----
   adtv: { t: 'Daily trading', b: 'The average value of shares bought and sold each day. Low trading means it can be hard to sell without moving the price.', ex: '₹10 crore a day or more is comfortable. Under ₹2 crore is risky.' },
   pledge: { t: 'Owner shares pledged', b: 'The share of the owners\' (promoters\') stake they have used as security for loans. If the price falls, lenders can sell these shares, pushing it down further.', ex: 'Under 10% is fine. Over 25% is a red flag.' },
@@ -38,7 +38,7 @@ export const GLOSSARY = {
   segment: { t: 'Segment', b: 'The part of the industry a company works in, like Power or Oil & gas. Limiting each segment stops the basket from depending on one area.' },
   theme: { t: 'Theme share', b: 'How much of a company\'s business comes from the basket\'s theme. A company with only 5% of its sales from air conditioners isn\'t really an AC stock.', ex: 'Default: needs at least 20%.' },
   limits: { t: 'Basket limits', b: 'Rules for the basket as a whole: how many stocks it holds and the most any one stock or segment can take.' },
-  replacement: { t: 'Replacement', b: 'When a basket drops below its minimum number of stocks, the app picks the next best stock: Pass stocks first, then Watch stocks, and keeps cash if nothing fits.' },
+  replacement: { t: 'Replacement', b: 'When a basket drops below its minimum number of stocks, the app picks the next best stock: Buy-rated stocks first, then Hold-rated ones, and keeps cash if nothing fits.' },
   cooldown: { t: 'Cool-down', b: 'A stock sold by the rules can\'t come back for 90 days. This stops buying and selling the same stock back and forth.' },
   newsflag: { t: 'News flag', b: 'Your note that a news story may change one of the numbers, like a jump in borrowing. If it hits a must-pass rule, the app prepares a sell. The next quarterly results confirm or clear it.' },
   keepanyway: { t: 'Keep anyway', b: 'You chose not to follow a rule. Your reason is saved in the decision journal so you can later see whether overriding helped.' },
@@ -52,16 +52,16 @@ export const GLOSSARY = {
   // ---- scorecard ----
   backtest: { t: 'Past test', b: 'We applied this basket\'s rules every June from 2018 to 2025 using past numbers, then checked how each stock did over the next 12 months. All data here is mock.' },
   goodexits: { t: 'Good exit calls', b: 'Of all the stocks the rules said to remove, how many then did worse than the Nifty 50 over the next year. Those exits saved you from underperformance.', ex: '28 of 73 means 28 removals were right and 45 stocks did better after being dropped.' },
-  keptbeat: { t: 'Kept stocks beat the market', b: 'In how many years the stocks the rules kept (Pass and Watch) did better on average than the Nifty 50 over the next 12 months.' },
+  keptbeat: { t: 'Kept stocks beat the market', b: 'In how many years the stocks the rules kept (Buy and Hold) did better on average than the Nifty 50 over the next 12 months.' },
   lossavoided: { t: 'Biggest loss avoided', b: 'The worst 12-month fall among the stocks the rules removed. Not holding it is the loss you avoided.' },
   grew: { t: '₹100 grew to', b: 'If you had put ₹100 into the kept stocks each June (equal amounts) and rolled it over every year, compared with ₹100 in the Nifty 50 index including dividends.' },
   rightpct: { t: 'Right %', b: 'The share of stocks removed by this rule that then did worse than the market. Higher means the rule is good at spotting trouble.' },
   typical: { t: 'Typical', b: 'The middle result (median): half the stocks did better, half did worse.' },
   // ---- About page ----
-  twice: { t: 'Daily checks', b: 'Prices and trading move every day, so the app does not act on one bad day.', list: ['First time a daily must-pass number breaks its limit: you get a heads-up, nothing else.', 'Still broken at the next check: the stock is marked Remove and a sell is prepared for you.', 'Back in range: the count resets.', 'Free checks other status changes weekly, Pro daily. A must-pass break always alerts at once.'] },
-  results: { t: 'Quarterly results', b: 'Companies report new numbers every three months. When they arrive, every rule is checked again with the new numbers.', list: ['A must-pass rule breaks: the stock is marked Remove and a sell is prepared.', 'You confirm the sell, or keep the stock and note your reason.', 'If the basket drops below its minimum, the app suggests the next best stock.', 'Open news flags on that number are confirmed or cleared.'] },
+  twice: { t: 'Daily checks', b: 'Prices and trading move every day, so the app does not act on one bad day.', list: ['First time a daily must-pass number breaks its limit: you get a heads-up, nothing else.', 'Still broken at the next check: the stock is rated Sell and a sell is prepared for you.', 'Back in range: the count resets.', 'Free checks other status changes weekly, Pro daily. A must-pass break always alerts at once.'] },
+  results: { t: 'Quarterly results', b: 'Companies report new numbers every three months. When they arrive, every rule is checked again with the new numbers.', list: ['A must-pass rule breaks: the stock is rated Sell and a sell is prepared.', 'You confirm the sell, or keep the stock and note your reason.', 'If the basket drops below its minimum, the app suggests the next best stock.', 'Open news flags on that number are confirmed or cleared.'] },
   claude: { t: 'Connect Claude', b: 'Optional. Claude can research stocks, build baskets and prepare orders in your account. Only you can confirm an order.', list: ['Open Claude Connectors and add a custom connector.', 'Paste the name and URL from Settings.', 'Ask Claude: "What\'s pending in FunInvestments?"', 'Nothing is lost when a chat ends. Everything Claude did stays saved here.'] },
-  plandemo: { t: 'Free and Pro', b: 'The plan switch is a demo. No payment is taken, and you can switch back anytime.', list: ['Urgent alerts are on every plan, never behind a paywall.', 'Pro is ₹199 a month or ₹1,999 a year.'] },
+  plandemo: { t: 'Free and Pro', b: 'The plan switch is a demo. No payment is taken, and you can switch back anytime.', list: ['Urgent alerts are on every plan, never behind a paywall.', 'Pro is ₹499 a month, ₹1,349 a quarter or ₹4,499 a year, for unlimited baskets.'] },
 };
 
 export function Info({ k, label, extra }) {

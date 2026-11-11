@@ -1,6 +1,7 @@
 // FunInvestments website shell: routing, layout, toast, sheets. Rendered with Preact so only what
 // changed updates (no full-page refresh). No AI: every number comes from the engine.
 import { html, render, useState, useEffect } from './vendor/preact-htm.js';
+import * as notify from './notify.js';
 import * as api from './client.js';
 import { store, refresh, act, go, toast, openSheet, confirmDialog } from './store.js';
 import { I, Logo, short } from './lib.js';
@@ -110,11 +111,14 @@ function App() {
 }
 
 (async function boot() {
+  store.onState = notify.check;
   render(html`<${App}/>`, document.getElementById('app'));
   await api.init();
   await refresh();
   // Server mode: show changes Claude makes from outside the page.
-  const sync = async () => { if (document.hidden) return; const r = await api.changedSince(api.currentRev()); if (r) await refresh(); };
+  // In the background the page keeps checking (every ~15 s) only if browser alerts are allowed, so alerts still arrive.
+  let tick = 0;
+  const sync = async () => { tick++; if (document.hidden && !(notify.wantsBackground() && tick % 6 === 0)) return; const r = await api.changedSince(api.currentRev()); if (r) await refresh(); };
   setInterval(sync, 2500);
   document.addEventListener('visibilitychange', sync); // back on this tab: catch up at once, not after the next tick
   api.onExternalChange(refresh);

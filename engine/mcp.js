@@ -2,7 +2,7 @@
 import { TOOLS } from './tools.js';
 
 export const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
-export const INSTRUCTIONS = 'FunInvestments: a rules-based guardian for the user\'s own stock baskets. Practice money only, mock data. At the start of every conversation call get_activity to see what was done before and what the user still needs to do. You can prepare orders; the user confirms them in the FunInvestments website. Explain things in plain words.';
+export const INSTRUCTIONS = 'FunInvestments: a rules-based guardian for the user\'s own stock baskets. Practice money only, mock data. At the start of every conversation call get_activity to see what was done before and what the user still needs to do. You can prepare orders; the user confirms them in the FunInvestments website. Explain things in plain words. Stock ratings: pass is shown as Buy, watch as Hold, remove as Sell. They are what the user\'s own rules say, not advice, so use those words.';
 
 // call(name, args) → { ok, data } | { ok: false, error }
 export function mcpHandle(msg, call) {

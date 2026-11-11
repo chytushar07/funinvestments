@@ -32,10 +32,10 @@ const build = () => html`
 const watch = () => html`
   <${Step} n="1" cap="One bad day is only a heads-up">
     <${Al} sym="1" text="Hind Rectifiers · Daily trading dipped below the limit" sub="₹4.6 cr → ₹1.7 cr a day · limit ₹2 cr"/></${Step}>
-  <${Step} n="2" cap="Back in range at the next check: stays Pass">
+  <${Step} n="2" cap="Back in range at the next check: stays Buy">
     <div class="li"><span class="dot green" aria-label="green"></span><span class="grow"><span class="t">Daily trading <span class="star" title="Must-pass rule">★</span> <${Info} k="adtv"/></span><span class="s num">₹1.7 cr → ₹5.1 cr</span></span><${Pill} s="pass"/></div></${Step}>
-  <${Step} n="3" cap="Below again: Remove, and a sell is prepared">
-    <${Al} ic="crit" sym="✕" text="Hind Rectifiers → ✕ Remove · sell order ready to review" btn="Review"/></${Step}>`;
+  <${Step} n="3" cap="Below again: Sell, and a sell is prepared">
+    <${Al} ic="crit" sym="✕" text="Hind Rectifiers → ✕ Sell · sell order ready to review" btn="Review"/></${Step}>`;
 
 const results = () => html`
   <${Step} n="1" cap="New numbers arrive: one up, one past the limit">
@@ -46,7 +46,7 @@ const results = () => html`
     <${Ord} side="sell" name="Precision Wires" sub="23 sh · Rules: Fails a must-pass rule: Debt vs equity" src="rules"/></${Step}>
   <${Step} n="3" cap="You decide. A replacement is suggested.">
     <div class="li" style="gap:8px"><${Fake} primary>Confirm</${Fake}><${Fake}>Keep anyway</${Fake}><${Info} k="keepanyway"/></div>
-    <${Ord} side="buy" name="Blue Star" sub="6 sh · Replacement: Pass · 2 warnings" src="rules"/></${Step}>`;
+    <${Ord} side="buy" name="Blue Star" sub="6 sh · Replacement: Buy · 2 warnings" src="rules"/></${Step}>`;
 
 const confirm = () => html`
   <${Step} n="1" cap="A prepared order waits for you">
@@ -76,19 +76,19 @@ const past = () => html`
     <div class="li"><span class="grow"><span class="t">Good exit calls <${Info} k="goodexits"/></span><span class="s">dropped stocks that then lagged</span></span><b class="num">36 <span class="muted" style="font-weight:600">of 86</span></b></div></${Step}>
   <${Step} n="2" cap="Each call is checked a year later">
     <div class="li"><span class="mono faint">2024</span><span class="grow"><span class="t">Cubex Tubings · Dropped</span><span class="s">Fails a must-pass rule: Daily trading</span></span><${Chg} v=${-24} d=${0}/><span class="ok" aria-label="Right">✓</span></div>
-    <div class="li"><span class="mono faint">2025</span><span class="grow"><span class="t">Blue Star · Kept</span><span class="s">Pass · 2 warnings</span></span><${Chg} v=${42} d=${0}/><span class="ok" aria-label="Right">✓</span></div></${Step}>`;
+    <div class="li"><span class="mono faint">2025</span><span class="grow"><span class="t">Blue Star · Kept</span><span class="s">Buy · 2 warnings</span></span><${Chg} v=${42} d=${0}/><span class="ok" aria-label="Right">✓</span></div></${Step}>`;
 
 const track = () => html`
   <${Step} n="1" cap="Type in the shares you own">
     <div class="li"><${Avatar} name="Tata Power" stage="power"/><span class="grow"><span class="t">Tata Power</span><span class="s num">40 sh · bought at ₹360</span></span><span class="tag">Tracking</span></div></${Step}>
   <${Step} n="2" cap="The rules alert you. You sell in your own broker.">
-    <${Al} ic="crit" sym="✕" text="Tata Power → ✕ Remove · consider selling in your broker"/></${Step}>`;
+    <${Al} ic="crit" sym="✕" text="Tata Power → ✕ Sell · consider selling in your broker"/></${Step}>`;
 
 // id, emoji, title, one line, glossary key for the "i", story, [link label, route]
 export const STORIES = [
   { id: 'browse', e: '🔍', t: 'Browse and search', d: '55 stocks, each checked by 13 rules.', info: 'warnings', body: browse, link: ['Explore', 'explore'] },
   { id: 'build', e: '🧺', t: 'Build baskets', d: 'By hand, paste symbols, or ask Claude.', info: 'limits', body: build, link: ['Baskets', 'baskets'] },
-  { id: 'watch', e: '🛡️', t: 'Rules watch every day', d: 'Each stock is Pass, Watch or Remove.', info: 'twice', body: watch, link: ['Alerts', 'alerts'] },
+  { id: 'watch', e: '🛡️', t: 'Rules watch every day', d: 'Each stock is rated Buy, Hold or Sell.', info: 'twice', body: watch, link: ['Alerts', 'alerts'] },
   { id: 'results', e: '📊', t: 'Results come out', d: 'New numbers re-check every stock.', info: 'results', body: results, link: ['Alerts', 'alerts'] },
   { id: 'confirm', e: '✅', t: 'You confirm every order', d: 'Nothing is bought or sold without you.', info: 'practice', body: confirm, link: ['Orders', 'orders'] },
   { id: 'flag', e: '📰', t: 'Flag news', d: 'Mark a number a story may change.', info: 'newsflag', body: flag, link: ['Pick a stock', 'explore'] },

@@ -7,6 +7,7 @@ import { Info } from './glossary.js';
 import { exitBasket } from './sheets.js';
 import { startTour, tourSeen } from './tour.js';
 import { STORIES, Story } from './stories.js';
+import * as notify from './notify.js';
 const warn = n => `${n} warning${n === 1 ? '' : 's'}`;
 export const ago = iso => { if (!iso) return ''; const s = Math.max(0, (Date.now() - new Date(iso)) / 1000); if (s < 60) return 'just now'; if (s < 3600) return `${Math.floor(s / 60)} min ago`; if (s < 86400) return `${Math.floor(s / 3600)} h ago`; return `${Math.floor(s / 86400)} d ago`; };
 
@@ -153,7 +154,7 @@ export function Home() {
       right=${html`<div class="seg small">${[['gainers', 'Gainers'], ['losers', 'Losers']].map(([v, l]) => html`<button key=${v} class=${mov === v ? 'on' : ''} onClick=${() => setMov(v)}>${l}</button>`)}</div>`}/>
     <${HRow} title="Energy" sub="Oil & gas · power · renewables · coal" items=${energy} onAll=${() => seeAll({ theme: 'energy' })}/>
     <${HRow} title="AC value chain" items=${ac} onAll=${() => seeAll({ theme: 'ac' })}/>
-    <${HRow} title="Pass the default rules" info="status" items=${passing} onAll=${() => seeAll({ status: 'pass' })}/>
+    <${HRow} title="Rated Buy by the default rules" info="status" items=${passing} onAll=${() => seeAll({ status: 'pass' })}/>
 
     <section class="section" id="with-claude" data-tour="claude">
       <div class="section-head"><div><h2>Build with Claude</h2>${!S.claudeConnected && html`<div class="faint" style="font-size:12.5px;margin-top:2px">Claude researches. The basket lands here with its rules.</div>`}</div>${S.claudeConnected ? html`<span class="tag claude">Connected</span>` : html`<button class="linkbtn" onClick=${() => go('account')}>Connect</button>`}</div>
@@ -189,7 +190,7 @@ export function Explore() {
       <button class="chip ${explore.profitable ? 'on' : ''}" onClick=${() => upd({ profitable: !explore.profitable })}>Profitable 2+ yrs</button>
     </div>
     <div class="chips" style="margin-top:8px">
-      ${[['', 'Any status'], ['pass', '✓ Pass'], ['watch', '! Watch'], ['remove', '✕ Remove']].map(([v, l]) => html`<button key=${'s' + v} class="chip ${explore.status === v ? 'on' : ''}" onClick=${() => upd({ status: v })}>${l}</button>`)}
+      ${[['', 'Any rating'], ['pass', '✓ Buy'], ['watch', '= Hold'], ['remove', '✕ Sell']].map(([v, l]) => html`<button key=${'s' + v} class="chip ${explore.status === v ? 'on' : ''}" onClick=${() => upd({ status: v })}>${l}</button>`)}
       <select class="chip select" aria-label="Sector" value=${explore.sector} onChange=${e => upd({ sector: e.target.value })}><option value="">All sectors</option>${sectors.map(s => html`<option key=${s} value=${s}>${s}</option>`)}</select>
       <select class="chip select" aria-label="Sort" value=${explore.sort} onChange=${e => upd({ sort: e.target.value })}><option value="points">Sort: rules</option><option value="gainers">Sort: gainers</option><option value="losers">Sort: losers</option><option value="name">Sort: A–Z</option></select>
     </div>
@@ -258,7 +259,7 @@ function ThemeShares({ d }) {
   const [vals, setVals] = useState({});
   const entries = S.themes.filter(t => d.themes[t.id] != null || d.theme === t.id);
   if (!entries.length) return null;
-  return html`<section class="section"><div class="section-head"><h2>Theme share <${Info} k="theme"/></h2><span class="faint" style="font-size:12px">Under ${S.defaultLimits.minTheme}% = Remove in that theme</span></div>
+  return html`<section class="section"><div class="section-head"><h2>Theme share <${Info} k="theme"/></h2><span class="faint" style="font-size:12px">Under ${S.defaultLimits.minTheme}% = Sell in that theme</span></div>
     <div class="card list" style="padding:2px 16px">${entries.map(t => html`<div class="li" key=${t.id}><span class="grow"><span class="t">${t.label}</span><span class="s">% of its business · you can edit</span></span>
       <input class="input num" style="width:84px;padding:8px 10px" id=${'ts-' + t.id} type="number" min="0" max="100" value=${vals[t.id] ?? d.themes[t.id] ?? ''} onInput=${e => setVals({ ...vals, [t.id]: e.target.value })} aria-label="${t.label} share percent"/>
       <button class="btn small" disabled=${vals[t.id] == null} onClick=${async () => { const r = await act('set_theme_share', { symbol: d.stock.symbol, theme: t.id, share: vals[t.id] }, { ok: 'Saved' }); if (r?.ok) setVals({}); }}>Save</button></div>`)}</div></section>`;
@@ -295,11 +296,13 @@ export function Basket({ id }) {
   const b = S.baskets.find(x => x.id === id);
   const [tab, setTabState] = useState(basketTab[id] || 'overview');
   const setTab = t => { basketTab[id] = t; setTabState(t); };
+  useEffect(() => { const f = e => { if (e.detail?.id === id) setTab(e.detail.tab); }; window.addEventListener('fi-tab', f); return () => window.removeEventListener('fi-tab', f); }, [id]);
   if (!b) return html`<${Empty} title="This basket is gone"><span class="muted">It may have been deleted.</span><button class="btn small" onClick=${() => go('baskets')}>All baskets</button></${Empty}>`;
   const tabs = ['overview', 'stocks', 'rules', 'scorecard'];
   return html`<div>
     <div class="row" style="margin-top:4px"><button class="iconbtn" onClick=${() => go('baskets')} aria-label="Back to baskets">${I.back}</button>
       <div style="min-width:0;flex:1"><h1 style="font-size:22px">${b.name}</h1><div class="row wrap" style="gap:6px;margin-top:3px"><${Src} s=${b.source}/>${b.editedBy && b.editedBy !== b.source && html`<${Src} s=${b.editedBy} edited/>`}${b.themeLabel && html`<span class="tag">${b.themeLabel}</span>`}${b.kind === 'tracking' && html`<span class="tag">Tracking</span>`}</div></div>
+      ${b.kind === 'model' && html`<button class="btn small editrules" data-tour="editrules" onClick=${() => setTab('rules')}>⚙ Edit rules</button>`}
       <button class="iconbtn" aria-label="Basket options" onClick=${() => openSheet({ type: 'basketmenu', id: b.id })}>${I.more}</button></div>
     ${b.description && html`<p class="muted" style="margin:10px 0 0;font-size:13.5px">${b.description}</p>`}
     <section class="stack" style="margin-top:16px;gap:6px">
@@ -324,14 +327,14 @@ function BasketOverview({ b, setTab }) {
   else cta = html`<button class="btn primary block" onClick=${() => openSheet({ type: 'invest', id: b.id })}>Invest ₹</button>`;
   const acts = S.decisions.filter(d => d.basketId === b.id).slice(0, 8);
   const journal = S.journal.filter(j => j.basketId === b.id);
-  const label = { added: 'Added', removed: 'Taken out', bought: 'Bought', sold: 'Sold', override: 'Kept anyway', refill_add: 'Replacement added', exited: 'Exited basket (sold all)', status_pass: '→ ✓ Pass', status_watch: '→ ! Watch', status_remove: '→ ✕ Remove' };
+  const label = { added: 'Added', removed: 'Taken out', bought: 'Bought', sold: 'Sold', override: 'Kept anyway', refill_add: 'Replacement added', exited: 'Exited basket (sold all)', status_pass: '→ ✓ Buy', status_watch: '→ = Hold', status_remove: '→ ✕ Sell' };
   return html`<div class="stack" style="margin-top:16px">
     <div class="row wrap" style="gap:6px">${['pass', 'watch', 'remove'].filter(k => b.counts[k]).map(k => html`<${Pill} key=${k} s=${k} n=${b.counts[k]}/>`)}${b.belowMin && html`<span class="tag">Below ${b.limits.minStocks} stocks</span>`}</div>
     ${b.kind === 'model' && html`<div class="card stack" style="gap:12px">
       <div class="row between"><span class="eyebrow">Where the money is <${Info} k="segment"/></span><span class="faint" style="font-size:12px">${b.isInvested ? 'Now' : 'Planned'}</span></div>
       <div class="wbar" role="img" aria-label=${sw.map(([s, w]) => `${stageLabel(s)} ${w}%`).join(', ')}>${sw.map(([s, w]) => html`<span key=${s} style="width:${w}%;background:${stageColor(s)}" title="${stageLabel(s)} ${w}%"></span>`)}</div>
       <div class="legend">${sw.map(([s, w]) => html`<span key=${s}><i style="background:${stageColor(s)}"></i>${stageLabel(s)} <b class="num">${w.toFixed(0)}%</b></span>`)}</div>
-      <div class="faint" style="font-size:12px">Limits: ${b.limits.maxStageWeight}% a segment · ${b.limits.maxStockWeight}% a stock · ${b.limits.maxWatchWeight}% a Watch stock <${Info} k="limits"/></div></div>`}
+      <div class="faint" style="font-size:12px">Limits: ${b.limits.maxStageWeight}% a segment · ${b.limits.maxStockWeight}% a stock · ${b.limits.maxWatchWeight}% a Hold stock <${Info} k="limits"/></div></div>`}
     <div class="tiles">
       <div class="tile"><span class="k">${b.kind === 'tracking' ? 'What you paid' : 'Money put in'} <${Info} k="invested"/></span><span class="v">${inr(b.invested)}</span></div>
       <div class="tile"><span class="k">${b.kind === 'tracking' ? 'Worth now' : 'Cash in basket'}</span><span class="v">${inr(b.kind === 'tracking' ? b.value : b.cash)}</span></div>
@@ -380,6 +383,7 @@ function BasketRules({ b }) {
   const steps = [['minStocks', 'min_stocks', 'Fewest stocks', 1, 1, 12, ''], ['maxStocks', 'max_stocks', 'Most stocks', 1, 1, 12, ''], ['maxStockWeight', 'max_stock_weight', 'Max in one stock', 5, 5, 100, '%'], ['maxStageWeight', 'max_stage_weight', 'Max in one segment', 5, 5, 100, '%'], ['maxWatchWeight', 'max_watch_weight', 'Max in a Watch stock', 5, 5, 100, '%'], ['driftTrigger', 'drift_trigger', 'Rebalance when off by', 1, 1, 30, ' pts'], ['minTheme', 'min_theme', 'Min theme share', 5, 0, 100, '%']];
   const dirty = lim && Object.keys(L).some(k => lim[k] !== L[k]);
   return html`<div class="stack" style="margin-top:14px">
+    <div class="card rulehelp"><b>Edit this basket's rules</b><span class="muted">${pro ? 'Tap a rule to change its limits · use the switch to turn it off · basket limits are at the bottom.' : 'Use the switch to turn a rule off. Changing limits (for example debt under 0.5×) needs Pro.'} Changes apply to this basket only, and Claude can make them too.</span></div>
     <div class="row between"><span class="eyebrow">13 safety rules · this basket only <${Info} k="warnings"/></span>${pro ? html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Reset rules to default?', body: 'Thresholds, switches and limits go back to the defaults for this basket.', confirm: 'Reset', onConfirm: () => act('reset_rules', { basket_id: b.id }, { ok: 'Rules reset' }) })}>Reset</button>` : html`<button class="linkbtn" onClick=${() => go('pricing')}>Edit with Pro</button>`}</div>
     <div class="card list" style="padding:2px 16px">${b.rules.metrics.map(r => {
       const red = b.stocks.filter(s => s.reds.includes(r.id)).length, amber = b.stocks.filter(s => s.ambers.includes(r.id)).length;
@@ -393,7 +397,7 @@ function BasketRules({ b }) {
         <${Info} k=${r.id}/>
         <${Switch} id=${`rt-${b.id}-${r.id}`} checked=${r.enabled} label="${r.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: r.id, enabled: v }, { ok: v ? `${r.label} on` : `${r.label} off` })}/></div>`;
     })}</div>
-    <div class="faint" style="font-size:12px">★ Must-pass: one red means Remove <${Info} k="mustpass"/></div>
+    <div class="faint" style="font-size:12px">★ Must-pass: one red means Sell <${Info} k="mustpass"/></div>
     ${b.kind === 'model' && html`<div class="row between" style="margin-top:8px"><span class="eyebrow">Basket limits <${Info} k="limits"/></span>${pro ? null : html`<span class="lock">Pro</span>`}</div>
       <div class="card list" style="padding:2px 16px">${steps.map(([k, , label, step, min, max, unit]) => html`<div class="li" key=${k}><span class="grow t">${label}${k === 'minTheme' && b.themeLabel ? html` <span class="faint" style="font-weight:600">(${b.themeLabel})</span>` : ''}</span>
         <${Stepper} label=${label} value=${cur[k]} min=${min} max=${max} step=${step} unit=${unit} onChange=${v => { if (!pro) { toast('Pro feature: basket limits', { action: 'See plans', go: 'pricing' }); return; } setLim({ ...cur, [k]: v }); }}/></div>`)}</div>
@@ -430,7 +434,7 @@ function Scorecard({ b }) {
       <div class="tile"><span class="k">Biggest loss avoided <${Info} k="lossavoided"/></span><span class="v down">${pct(s.worstAvoided?.ret, 0)}</span><span class="faint" style="font-size:12px">${shortName(s.worstAvoided?.name || '')} · from June ${s.worstAvoided?.year || ''}</span></div>
       <div class="tile"><span class="k">₹100 from 2018 grew to <${Info} k="grew"/></span><span class="v">₹${s.growth.kept}</span><span class="faint" style="font-size:12px">kept stocks · Nifty 50: ₹${s.growth.nifty} · simple yearly average, before costs</span></div></div>
     ${view === 'year' && html`<div class="card" style="margin-top:14px"><div class="row between wrap" style="gap:8px"><b>Average return in the 12 months after each June</b><div class="legend"><span><i style="background:var(--c-kept)"></i>Kept stocks</span><span><i style="background:var(--c-removed)"></i>Dropped stocks</span><span><i style="background:var(--c-nifty)"></i>Nifty 50</span></div></div><${YearChart} years=${sc.years}/></div>
-      <div class="tablewrap" style="margin-top:14px"><table><thead><tr><th>June</th><th>Pass</th><th>Watch</th><th>Dropped</th><th>Kept stocks' return</th><th>Dropped stocks' return</th><th>Nifty 50</th><th>Good exit calls</th><th>Did the rules help?</th></tr></thead><tbody>
+      <div class="tablewrap" style="margin-top:14px"><table><thead><tr><th>June</th><th>Buy</th><th>Hold</th><th>Dropped</th><th>Kept stocks' return</th><th>Dropped stocks' return</th><th>Nifty 50</th><th>Good exit calls</th><th>Did the rules help?</th></tr></thead><tbody>
       ${sc.years.map(y => html`<tr key=${y.year}><td>${y.year}</td><td>${y.pass}</td><td>${y.watch}</td><td>${y.removed}</td><td class=${cls(y.keptAvg)}>${pct(y.keptAvg, 0)}</td><td class=${cls(y.removedAvg)}>${pct(y.removedAvg, 0)}</td><td>${pct(y.nifty, 0)}</td><td>${y.removedRight} of ${y.removed}</td><td>${y.better === 'kept' ? html`<span class="ok">Yes ✓</span>` : html`<span class="no">No ✕</span>`}</td></tr>`)}</tbody></table></div>`}
     ${view === 'rule' && html`<div class="tablewrap" style="margin-top:14px"><table><thead><tr><th>Rule</th><th>Stocks dropped</th><th>Right %</th><th>Worst</th><th>Typical</th><th>Best</th><th>Biggest loss avoided</th></tr></thead><tbody>
       ${sc.byRule.map(r => html`<tr key=${r.id}><td>${r.label}${r.critical ? ' ★' : ''}</td><td>${r.removed}</td><td>${r.hitRate == null ? '—' : r.hitRate + '%'}</td><td class=${cls(r.worst)}>${pct(r.worst, 0)}</td><td class=${cls(r.median)}>${pct(r.median, 0)}</td><td class=${cls(r.best)}>${pct(r.best, 0)}</td><td>${r.worstAvoided ? `${shortName(r.worstAvoided.name)} ${r.worstAvoided.year}` : '—'}</td></tr>`)}</tbody></table></div>
@@ -514,21 +518,45 @@ export function Alerts() {
 // ---------- Pricing ----------
 export function Pricing() {
   const S = store.S;
+  const PR = S.prices || { monthly: 499, quarterly: 1349, yearly: 4499 };
   const [billing, setBilling] = useState('yearly');
-  const y = billing === 'yearly', pro = S.plan === 'pro';
+  const pro = S.plan === 'pro';
+  const OPT = { monthly: ['Monthly', PR.monthly, 'month', 1], quarterly: ['Quarterly', PR.quarterly, 'quarter', 3], yearly: ['Yearly', PR.yearly, 'year', 12] };
+  const [label, price, per, months] = OPT[billing];
+  const save = PR.monthly * months - price, perMonth = Math.round(price / months);
+  const inr = n => '₹' + n.toLocaleString('en-IN');
   return html`<div>
     <div class="row" style="margin-top:4px"><button class="iconbtn" onClick=${() => history.back()} aria-label="Back">${I.back}</button><h1>Plans</h1></div>
-    <div class="row between wrap" style="margin-top:16px;gap:10px"><div class="seg">${[['monthly', 'Monthly'], ['yearly', 'Yearly']].map(([v, l]) => html`<button key=${v} class=${billing === v ? 'on' : ''} onClick=${() => setBilling(v)}>${l}</button>`)}</div>${y && html`<span class="tag claude">Save ₹389</span>`}</div>
+    <div class="row between wrap" style="margin-top:16px;gap:10px"><div class="seg">${Object.entries(OPT).map(([v, o]) => html`<button key=${v} class=${billing === v ? 'on' : ''} onClick=${() => setBilling(v)}>${o[0]}</button>`)}</div>${save > 0 && html`<span class="tag claude">Save ${inr(save)}</span>`}</div>
     <div class="plans" style="margin-top:14px">
       <div class="plan"><div><b>Free</b><div class="big" style="font-size:28px">₹0</div></div>
         <ul><li>1 basket · 8 stocks</li><li>1 tracking basket</li><li>13 safety rules per basket</li><li>Weekly checks</li><li class="safety">Urgent alerts instantly</li><li>₹1,00,000 practice money</li><li>3 news flags a month</li><li>Past test: latest year</li><li>Connect Claude</li></ul>
         ${pro ? html`<button class="btn ghost block" onClick=${() => act('set_plan', { plan: 'free' }, { ok: 'Back on Free' })}>Switch to Free</button>` : html`<button class="btn ghost block" disabled>Current plan</button>`}</div>
-      <div class="plan pro"><div class="row between"><b>Pro</b><span class="tag claude">Popular</span></div>
-        <div><span class="big" style="font-size:28px">${y ? '₹1,999' : '₹199'}</span><span class="muted"> / ${y ? 'year' : 'month'}</span></div>
-        <ul><li>Unlimited baskets · 12 stocks</li><li>Change any rule's limits</li><li>Company events + basket limits</li><li>Daily checks</li><li>Unlimited news flags</li><li>Full past test 2018–2025</li><li>Preview a rule change first</li><li>See if your overrides helped</li><li>Phone + email alerts</li><li>Share your rule results</li></ul>
-        ${pro ? html`<button class="btn block" disabled>You're on Pro</button>` : html`<button class="btn primary block" onClick=${async () => { const r = await act('set_plan', { plan: 'pro', billing }, { ok: 'Pro is on · mock checkout' }); if (r?.ok) history.back(); }}>Start Pro</button>`}</div>
+      <div class="plan pro"><div class="row between"><b>Pro</b><span class="tag unl">∞ Unlimited baskets</span></div>
+        <div><span class="big" style="font-size:28px">${inr(price)}</span><span class="muted"> / ${per}</span></div>
+        ${months > 1 && html`<div class="faint" style="font-size:12.5px;margin-top:-6px">${inr(perMonth)} a month, billed ${label.toLowerCase()}</div>`}
+        <ul><li><b>Unlimited baskets</b> · 12 stocks each</li><li>Change any rule's limits</li><li>Company events + basket limits</li><li>Daily checks</li><li>Unlimited news flags</li><li>Full past test 2018–2025</li><li>Preview a rule change first</li><li>See if your overrides helped</li><li>Browser alerts for every change</li><li>Share your rule results</li></ul>
+        ${pro ? html`<button class="btn block" disabled>You're on Pro${S.billing ? ` · ${OPT[S.billing]?.[0] || ''}` : ''}</button>` : html`<button class="btn primary block" onClick=${async () => { const r = await act('set_plan', { plan: 'pro', billing }, { ok: `Pro is on (${label.toLowerCase()}) · mock checkout` }); if (r?.ok) history.back(); }}>Start Pro · ${inr(price)}</button>`}</div>
     </div>
+    <div class="card" style="margin-top:14px;padding:14px 16px"><b style="font-size:14px">One price, every basket</b>
+      <div class="muted" style="font-size:13px;margin-top:4px;line-height:1.5">Paid model baskets elsewhere often cost ₹100–500 a month <i>each</i>. A mutual fund on ₹10 lakh costs ₹5,000–10,000 a year in fees. Pro is ${inr(PR.yearly)} a year for all your baskets, with no per-order fee.</div></div>
     <p class="faint" style="font-size:12px;text-align:center;margin-top:12px">Prototype · mock checkout · no payment taken</p></div>`;
+}
+
+
+// ---------- Notifications (Settings) ----------
+function Notifications() {
+  const S = store.S, pro = S.plan === 'pro';
+  const [perm, setPerm] = useState(notify.permission());
+  const allow = async () => { const p = await notify.askPermission(); setPerm(p); if (p === 'granted') notify.test(); };
+  const state = { granted: ['Allowed', 'up'], denied: ['Blocked in browser settings', 'down'], default: ['Not allowed yet', 'faint'], unsupported: ['Not supported in this browser', 'faint'] }[perm] || ['', 'faint'];
+  return html`<section class="section" id="notifications"><h2>Notifications</h2><div class="card list" style="padding:2px 16px">
+    <div class="li"><span class="grow"><span class="t">Browser notifications</span><span class="s ${state[1]}">${state[0]}</span></span>
+      ${perm === 'granted' ? html`<button class="btn small" onClick=${() => notify.test()}>Send test</button>` : perm === 'default' ? html`<button class="btn small primary" onClick=${allow}>Allow</button>` : null}</div>
+    <div class="li"><span class="grow"><span class="t">Urgent alerts</span><span class="s">A must-pass rule breaks · every plan · always on</span></span><${Switch} id="nt-crit" checked=${true} disabled=${true} label="Urgent alerts" onChange=${() => {}}/></div>
+    <div class="li"><span class="grow"><span class="t">Every change</span><span class="s">${pro ? 'Rating changes, drafted orders, what Claude prepared' : html`<span class="lock">Pro</span> Rating changes, drafts, Claude's work`}</span></span><${Switch} id="nt-push" checked=${S.notif.push} label="Every change" onChange=${async v => { if (v && notify.permission() === 'default') setPerm(await notify.askPermission()); act('set_notif', { push: v }, { ok: v ? 'You\'ll get an alert for every change' : 'Only urgent alerts now' }); }}/></div>
+    <div class="li"><span class="grow"><span class="t">Weekly email digest</span><span class="s">Coming soon · not sent in this prototype</span></span><${Switch} id="nt-email" checked=${false} disabled=${true} label="Email digest" onChange=${() => {}}/></div></div>
+    <p class="faint" style="font-size:12px;margin:8px 2px 0">Alerts arrive while FunInvestments is open in a tab, even in the background.</p></section>`;
 }
 
 // ---------- Account ----------
@@ -543,10 +571,7 @@ export function Account() {
       <div class="field"><label for="pf-name">Name</label><div class="row"><input class="input" id="pf-name" value=${name} onInput=${e => setName(e.target.value)}/><button class="btn small" disabled=${name.trim() === S.user.name || !name.trim()} onClick=${() => act('set_profile', { name }, { ok: 'Saved' })}>Save</button></div></div>
       <div class="row between"><span>Plan · <b>${pro ? 'Pro' : 'Free'}</b></span><button class="linkbtn" onClick=${() => go('pricing')}>See plans</button></div></div></section>
     <${ConnectClaude}/>
-    <section class="section"><h2>Notifications</h2><div class="card list" style="padding:2px 16px">
-      <div class="li"><span class="grow"><span class="t">Urgent alerts</span><span class="s">Always on, every plan</span></span><${Switch} id="nt-crit" checked=${true} disabled=${true} label="Critical alerts" onChange=${() => {}}/></div>
-      <div class="li"><span class="grow"><span class="t">Push</span><span class="s">${pro ? 'Status changes and drafts' : html`<span class="lock">Pro</span>`}</span></span><${Switch} id="nt-push" checked=${S.notif.push} label="Push" onChange=${v => act('set_notif', { push: v })}/></div>
-      <div class="li"><span class="grow"><span class="t">Email</span><span class="s">${pro ? 'Weekly digest' : html`<span class="lock">Pro</span>`}</span></span><${Switch} id="nt-email" checked=${S.notif.email} label="Email" onChange=${v => act('set_notif', { email: v })}/></div></div></section>
+    <${Notifications}/>
     <section class="section"><h2>Demo</h2><div class="card stack" style="gap:10px">
       <dl class="kv"><dt>Demo date <${Info} k="democlock"/></dt><dd>${dateLabel(S.clock)}</dd><dt>Next results</dt><dd>${S.nextFiling ? `${S.nextFiling.symbol} · ${short(S.nextFiling.date)}` : '—'}</dd><dt>Prices</dt><dd>Mock data</dd><dt>Saved</dt><dd>${server ? 'Online' : 'In this browser'}</dd></dl>
       ${server && api.getSpace() === 'private' && html`<div class="row between"><span>Your private space <${Info} k="privatespace"/></span><button class="btn small ghost" onClick=${() => copy(location.origin + location.pathname + '#key=' + S.user.apiKey)}>Copy link</button></div>`}
@@ -567,11 +592,11 @@ export function PlanSwitch({ big, home, rail }) {
 // ---------- About ----------
 // The cards and their expandable examples live in stories.js.
 const PLAN_ROWS = [
-  ['Baskets', '1', 'Unlimited'], ['Stocks per basket', '8', '12'], ['Tracking baskets (real shares)', '1', 'Unlimited'],
+  ['Baskets', '1', '∞ Unlimited'], ['Stocks per basket', '8', '12'], ['Tracking baskets (real shares)', '1', 'Unlimited'],
   ['13 safety rules', true, true], ['Change any rule\'s limits', false, true], ['Company events (auditor quits, rating cuts…)', false, true],
   ['Rule checks', 'Weekly', 'Daily'], ['Urgent alerts the moment a must-pass rule breaks', true, true], ['News flags', '3 a month', 'Unlimited'],
   ['Past test', 'Latest year', '2018–2025'], ['Preview a rule change first', false, true], ['See if your overrides helped', false, true],
-  ['Phone and email alerts', false, true], ['Share your rule results', false, true], ['Connect Claude', true, true], ['Practice money', '₹1,00,000', '₹1,00,000'],
+  ['Browser alerts for every change', false, true], ['Share your rule results', false, true], ['Connect Claude', true, true], ['Practice money', '₹1,00,000', '₹1,00,000'],
 ];
 const PLAN_SHORT = ['Baskets', 'Stocks per basket', 'Rule checks', 'News flags', 'Past test', 'Change any rule\'s limits'];
 const cell = v => (v === true ? html`<span class="ok" aria-label="Included">✓</span>` : v === false ? html`<span class="faint" aria-label="Not included">—</span>` : v);
@@ -606,10 +631,10 @@ export function About() {
   return html`<div>
     <div class="row between" style="margin-top:4px"><h1>About</h1>${!first && html`<button class="btn small ghost" onClick=${startTour}>Take tour</button>`}</div>
     ${first ? html`<p class="muted" style="margin:8px 0 0;line-height:1.5">Stick to your own investing rules. The app watches; you decide.</p>
-      <section class="card nextstep" aria-label="Start here"><span class="eyebrow">Start here</span>
-        <div class="row between" style="gap:12px"><div style="min-width:0"><b>${seen ? 'Create your first basket' : 'New here? Take the tour'}</b><div class="muted" style="font-size:13px">${seen ? 'Pick stocks yourself or ask Claude.' : 'A quick walk around the app.'}</div></div>
-          <button class="btn small primary" onClick=${seen ? () => newBasket() : startTour}>${seen ? 'Create basket' : 'Start tour'}</button></div>
-        <button class="linkbtn" style="align-self:flex-start;font-size:12.5px;padding:0" onClick=${seen ? startTour : () => newBasket()}>${seen ? 'Take the tour again' : 'Skip, create a basket'}</button></section>`
+      <section class="card startcard" aria-label="Start here"><span class="eyebrow">Start here</span>
+        <div class="sc-text"><b>${seen ? 'Create your first basket' : 'New here? Take the tour'}</b><div class="muted">${seen ? 'Pick stocks yourself or ask Claude.' : 'A quick walk around the app.'}</div></div>
+        <button class="btn small primary" onClick=${seen ? () => newBasket() : startTour}>${seen ? 'Create basket' : 'Start tour'}</button>
+        <button class="linkbtn sc-alt" onClick=${seen ? startTour : () => newBasket()}>${seen ? 'Take the tour again' : 'Skip, create a basket'}</button></section>`
     : html`<section class="section"><div class="section-head"><h2>Where you are</h2>${S.todo.length > 1 && html`<button class="linkbtn" onClick=${() => go('activity')}>+${S.todo.length - 1} more</button>`}</div>
       <div class="card list" style="padding:2px 16px">
         <div class="li"><span class="grow"><span class="t">${t ? t.text : 'All caught up'}</span><span class="s">${t ? t.detail : 'Your rules are watching.'}</span></span>${t && html`<button class="btn small primary" onClick=${() => doTodo(t)}>${TODO_BTN[t.kind] || 'Open'}</button>`}</div>

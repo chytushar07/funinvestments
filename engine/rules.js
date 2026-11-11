@@ -1,4 +1,4 @@
-// Rules engine: 13 metrics + optional event rules → points → Pass / Watch / Remove.
+// Rules engine: 13 metrics + optional event rules → points → Buy (pass) / Hold (watch) / Sell (remove).
 // Plain, deterministic code. No AI.
 
 export const DEFAULT_RULES = [
@@ -89,7 +89,7 @@ export function scoreStock(stock, ruleSet, opts = {}) {
     if (missingCount >= L.missingWatch) watchWhy.push(`${missingCount} numbers missing`);
     if (watchWhy.length) {
       const onlyPoints = watchWhy.length === 1 && res.points === L.passBufferTo;
-      if (opts.prevStatus === 'pass' && onlyPoints) { res.status = 'pass'; res.reasons.push('Stays Pass until 5 warnings (avoids flip-flopping)'); res.buffered = true; }
+      if (opts.prevStatus === 'pass' && onlyPoints) { res.status = 'pass'; res.reasons.push('Stays Buy until 5 warnings (avoids flip-flopping)'); res.buffered = true; }
       else { res.status = 'watch'; res.reasons.push(...watchWhy); }
     } else {
       res.status = 'pass'; res.reasons.push(res.points ? `${res.points} warning${res.points > 1 ? 's' : ''}` : 'No warnings');

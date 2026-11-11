@@ -13,7 +13,7 @@ export async function refresh() {
   try {
     const r = await api.call('get_state');
     if (mine !== seq) return true;
-    if (r.ok) { store.S = r.data; store.rev++; store.netError = null; done = true; }
+    if (r.ok) { store.S = r.data; store.rev++; store.netError = null; done = true; try { store.onState?.(store.S); } catch { /* never block a refresh */ } }
   } catch (e) { if (mine !== seq) return false; store.netError = e.message; }
   emit();
   return done;

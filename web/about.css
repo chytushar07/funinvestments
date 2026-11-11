@@ -36,3 +36,12 @@ details.story { display: block; padding: 0; }
 /* Two roomy columns on wide screens so an open example reads like the phone layout */
 .can { grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
 .story .sum > .row { flex-wrap: wrap; row-gap: 2px; }
+
+/* About: "Start here" card. Its own layout so Home's compact .nextstep row style can't squash it. */
+.startcard { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 14px; padding: 14px 16px;
+  border-color: color-mix(in oklab, var(--brand) 55%, var(--line)); background: linear-gradient(135deg, var(--brand-soft), transparent 75%), var(--card); }
+.startcard .eyebrow { grid-column: 1 / -1; }
+.startcard .sc-text { min-width: 0; }
+.startcard .sc-text b { display: block; font-size: 15px; }
+.startcard .sc-text .muted { font-size: 13px; margin-top: 2px; }
+.startcard .sc-alt { grid-column: 1 / -1; justify-self: start; font-size: 12.5px; padding: 0; }

@@ -9,7 +9,8 @@ export const dateLabel = d => new Date(d + 'T00:00:00Z').toLocaleDateString('en-
 export const short = d => (d ? new Date(d + 'T00:00:00Z').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '');
 export const initials = n => (n || '?').replace(/\(.*?\)/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
 export const shortName = n => (n || '').replace(/\s*\(.*\)/, '').split(' ').slice(0, 2).join(' ');
-export const STATUS = { pass: ['✓', 'Pass'], watch: ['!', 'Watch'], remove: ['✕', 'Remove'] };
+// What a basket's rules say about a stock. Internal ids stay pass / watch / remove.
+export const STATUS = { pass: ['✓', 'Buy'], watch: ['=', 'Hold'], remove: ['✕', 'Sell'] };
 
 export const Pill = ({ s, n }) => (s ? html`<span class="pill ${s}"><span aria-hidden="true">${STATUS[s][0]}</span>${n != null ? `${n} ` : ''}${STATUS[s][1]}</span>` : null);
 export const Src = ({ s, edited }) => (s === 'claude' ? html`<span class="tag claude">${edited ? 'Edited by Claude' : 'By Claude'}</span>` : s === 'you' ? html`<span class="tag">${edited ? 'Edited by you' : 'By you'}</span>` : s === 'rules' ? html`<span class="tag">By rules</span>` : null);
