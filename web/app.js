@@ -170,7 +170,7 @@ function App() {
     <nav class="bottomnav" aria-label="Main">${nav.map(([r, l, ic, n]) => html`<button key=${r} data-tour=${'nav-' + r} class="${active === r ? 'on' : ''} ${r === 'about' ? 'explorebtn' : ''}" aria-current=${active === r ? 'page' : null} onClick=${() => go(r)}>${ic}${l}${n ? html`<span class="dot-badge">${n}</span>` : null}</button>`)}</nav>
     <${SheetHost}/>
     <${Tour}/>
-    ${t && html`<div class="toast ${t.err ? 'err' : ''}" role="status" key=${t.at}><span>${t.text}</span>${t.action && html`<button onClick=${() => go(t.go)}>${t.action}</button>`}</div>`}
+    ${t && html`<div class="toast ${t.err ? 'err' : ''}" role="status" key=${t.at}><span>${t.text}</span>${t.action && html`<button onClick=${() => { store.ui = { ...store.ui, toast: null }; if (t.run) t.run(); else go(t.go); }}>${t.action}</button>`}</div>`}
   </div>`;
 }
 

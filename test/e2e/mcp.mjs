@@ -1,4 +1,4 @@
-const B = 'http://localhost:8787', K = 'fi_demo_7f3a9c21';
+const B = process.env.B || 'http://localhost:8787', K = process.env.K || 'fi_demo_7f3a9c21';
 const rpc = async (method, params) => (await (await fetch(`${B}/mcp/${K}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json());
 const api = async (op, a = {}) => (await (await fetch(`${B}/api/${op}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ args: a }) })).json());
 const tools = (await rpc('tools/list', {})).result.tools;

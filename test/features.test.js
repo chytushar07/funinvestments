@@ -74,8 +74,9 @@ test('baskets: create (empty/unknown/duplicate names/limits), read, update, dupl
   assert.equal(b.count, 6);
   const b2 = basket('AC');
   assert.equal(b2.name, 'AC 2', 'duplicate name gets a number');
-  const blank = ok('create_basket', { name: '   ', symbols: AC }).basket;
-  assert.ok(blank.name.length > 0, 'blank name falls back');
+  no('create_basket', { name: '   ', symbols: AC }, 'bad_name'); // a name of only spaces is a mistake, said plainly
+  const blank = ok('create_basket', { symbols: AC }).basket;
+  assert.ok(blank.name.length > 0, 'no name falls back');
   const long = ok('create_basket', { name: 'x'.repeat(200), symbols: EN }).basket;
   assert.ok(long.name.length <= 40);
   const up = ok('update_basket', { basket_id: b.id, name: 'Renamed', description: 'note' }).basket;
@@ -142,9 +143,10 @@ test('stocks: add (dup, unknown, Sell-rated, over segment, full), remove (held n
   no('add_stock', { basket_id: b.id, symbol: 'SRF' }, 'exists');
   no('add_stock', { basket_id: b.id, symbol: 'NOPE' }, 'not_found');
   no('add_stock', { basket_id: b.id, symbol: 'RAMRAT' }, 'rule_block');
-  ok('add_stock', { basket_id: b.id, symbol: 'VOLTAS' === 'x' ? 'x' : 'PETRONET' });
-  ok('remove_stock', { basket_id: b.id, symbol: 'PETRONET' });
-  no('remove_stock', { basket_id: b.id, symbol: 'PETRONET' }, 'not_found');
+  no('add_stock', { basket_id: b.id, symbol: 'PETRONET' }, 'rule_block'); // 0% of its business in AC
+  ok('add_stock', { basket_id: b.id, symbol: 'AVL' });
+  ok('remove_stock', { basket_id: b.id, symbol: 'AVL' });
+  no('remove_stock', { basket_id: b.id, symbol: 'AVL' }, 'not_found');
   invest(b.id);
   no('remove_stock', { basket_id: b.id, symbol: 'SRF' }, 'has_holding');
   const r = ok('remove_stock', { basket_id: b.id, symbol: 'SRF', sell: true });
@@ -183,7 +185,7 @@ test('orders: invest amounts (0, negative, text, too small, over cash, exact), b
   no('update_order', { order_id: one.id, qty: 0 }, 'bad_qty');
   ok('update_order', { order_id: one.id, qty: one.qty + 1 });
   ok('cancel_order', { order_id: one.id });
-  no('cancel_order', { order_id: one.id }, 'not_found');
+  no('cancel_order', { order_id: one.id }, 'already_cancelled');
   no('update_order', { order_id: one.id, qty: 2 }, 'not_found');
   const rest = all.orders.slice(1).map(o => o.id);
   ok('confirm_order', { order_ids: rest });
@@ -321,7 +323,7 @@ test('journal: "keep anyway" writes an entry; edit and delete it', () => {
   assert.equal(st.journal[0].reason, 'edited');
   ok('delete_journal', { id: j.id });
   no('delete_journal', { id: j.id }, 'not_found');
-  no('delete_journal', { id: 'x' }, 'person_only', 'claude');
+  no('delete_journal', { id: 'x' }, 'not_found', 'claude'); // Claude can tidy the journal too
 });
 
 // ---------------- Notifications / pending ----------------
@@ -335,7 +337,7 @@ test('notifications: mark read, delete, clear by basket, decline/restore every t
   no('dismiss_alert', { alert_id: 'x' }, 'not_found');
   ok('clear_alerts', { basket_id: b.id });
   assert.ok(!st.alerts.some(a => a.basketId === b.id), 'basket alerts cleared');
-  no('clear_alerts', {}, 'person_only', 'claude');
+  no('confirm_order', { order_ids: [] }, 'person_only', 'claude');
   for (const t of ok('get_activity', {}).todo) ok('decline_todo', { key: t.key });
   assert.equal(ok('get_activity', {}).todo.filter(t => t.kind !== 'alerts').length, 0, 'every to-do declined');
   no('decline_todo', { key: 'nothing' }, 'not_found');

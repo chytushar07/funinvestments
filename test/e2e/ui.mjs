@@ -97,8 +97,8 @@ await journey('5. Stock page: buy, sell, add to another basket, flag + withdraw'
   await reload('stock-HAVELLS');
   await tap('Buy'); await tap('Review order'); await tap('Buy ·');
   let st = await S(); const h1 = st.baskets.find(x => x.id === bk.id).stocks.find(s => s.symbol === 'HAVELLS').qty;
-  await tap('Sell'); await tap('Review order'); await tap('Sell ·');
-  st = await S(); const h2 = st.baskets.find(x => x.id === bk.id).stocks.find(s => s.symbol === 'HAVELLS').qty;
+  await tap('Sell'); await p.click('.sheet [aria-label$=": less"]'); await wait(400); await tap('Sell ·'); // Sell drafts all you hold and opens the review; keep one share here
+  st = await S(); const h2 = st.baskets.find(x => x.id === bk.id).stocks.find(s => s.symbol === 'HAVELLS')?.qty || 0; // selling all takes it out of the basket
   check('buy then sell changed holding', h1 > 0 && h2 < h1, `${h1} -> ${h2}`);
   await reload('stock-NTPC'); await tap('Add to basket');
   const added = await tap('Add', 'sheet', { optional: true });
@@ -126,9 +126,9 @@ await journey('6. Basket menu: edit, duplicate, rules reset, exit (cancel then c
   await closeSheet(); await p.click('[aria-label="Basket options"]'); await wait(500); await tap('Duplicate');
   st = await S(); check('duplicated', st.baskets.some(x => x.name === 'UI renamed copy'));
   await reload('basket-' + bk.id); await p.click('[aria-label="Basket options"]'); await wait(500); await tap('Reset rules'); await tap('Reset', 'sheet');
-  await reload('basket-' + bk.id); await p.click('[aria-label="Basket options"]'); await wait(500); await tap('Exit basket'); await tap('Review the sells'); await closeSheet(); await wait(700);
+  await reload('basket-' + bk.id); await p.click('[aria-label="Basket options"]'); await wait(500); await tap('Exit basket'); await closeSheet(); await wait(700);
   st = await S(); check('closing exit preview keeps shares, no pending', st.pending === 0 && st.baskets.find(x => x.id === bk.id).isInvested);
-  await p.click('[aria-label="Basket options"]'); await wait(500); await tap('Exit basket'); await tap('Review the sells'); await tap('Sell all');
+  await p.click('[aria-label="Basket options"]'); await wait(500); await tap('Exit basket'); await tap('Sell all', 'sheet');
   st = await S(); const b1 = st.baskets.find(x => x.id === bk.id);
   check('exit sold everything, basket kept', b1 && !b1.isInvested && st.pending === 0);
   await reload('basket-' + bk.id); await p.click('[aria-label="Basket options"]'); await wait(500); await tap('Delete basket'); await tap('Delete basket', 'sheet');
@@ -182,8 +182,9 @@ await journey('10. Orders page: rules sell → Keep anyway → journal edit/dele
   await call('set_rule', { rule_id: 'de', green: 0.01, red: 0.02, basket_id: bk.id });
   await reload('orders'); check('rules sell shows in Orders', /sell/i.test(await text()));
   await tap('Review all', 'page', { optional: true }) || await tap('Review', 'page');
-  await tap('Keep the stock anyway', 'sheet'); const inp = await p.$('.sheet input'); if (inp) await type('.sheet input', 'Long term view');
-  await tap('Keep and note it');
+  await tap('Keep anyway', 'sheet'); // one tap; the reason is added from the toast
+  await p.evaluate(() => [...document.querySelectorAll('.toast button')].find(b => b.textContent.includes('Add reason'))?.click()); await wait(500);
+  await type('#jr', 'Long term view'); await tap('Save', 'sheet');
   let st = await S(); check('kept: no pending, journal entry', st.pending === 0 && st.journal[0]?.action === 'Kept anyway', JSON.stringify(st.journal[0]));
   await reload('account'); const j = await tap('Long term view', 'page', { optional: true }) || await tap('Kept anyway', 'page', { optional: true });
   if (!j) { await p.evaluate(e => import('/store.js').then(m => m.openSheet({ type: 'journal', entry: e })), st.journal[0]); await wait(400); }

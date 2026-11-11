@@ -79,11 +79,13 @@ export function scoreStock(stock, ruleSet, opts = {}) {
   const C = cutoffsOf(ruleSet);
   const theme = opts.theme || null;
   const minTheme = opts.minTheme ?? L.acMin;
-  const share = theme ? stock.themes?.[theme] : undefined;
-  res.themeShare = share ?? null;
-  const missingCount = res.missing.length + (theme && share == null ? 1 : 0);
-  if (theme && share != null && share < minTheme) {
-    res.status = 'remove'; res.reasons.push(`Only ${share}% of its business is in this theme (needs ${minTheme}%)`); res.lowTheme = true;
+  // In a themed basket a stock with no known share of business in the theme counts as 0%: it isn't part of it.
+  const share = theme ? (stock.themes?.[theme] ?? 0) : undefined;
+  res.themeShare = theme ? share : null;
+  if (theme) res.minTheme = minTheme;
+  const missingCount = res.missing.length;
+  if (theme && share < minTheme) {
+    res.status = 'remove'; res.reasons.push(stock.themes?.[theme] == null ? `No known share of its business in this theme (needs ${minTheme}%)` : `Only ${share}% of its business is in this theme (needs ${minTheme}%)`); res.lowTheme = true;
   } else if (res.criticalReds.length) {
     res.status = 'remove'; res.reasons.push(`Fails a must-pass rule: ${res.criticalReds.map(labelOf).join(', ')}`);
   } else if (res.points > C.sellAbove) {

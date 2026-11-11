@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createState, dispatch, refillPlan, execute, HISTORY } from '../engine/core.js';
 import { scoreStock, defaultRuleSet, band, DEFAULT_RULES } from '../engine/rules.js';
 import { backtest } from '../engine/scorecard.js';
-import { TOOLS, PARITY } from '../engine/tools.js';
+import { TOOLS, PARITY, TOOL_OP } from '../engine/tools.js';
 
 const ok = r => { assert.ok(r.ok, JSON.stringify(r.error)); return r.data; };
 const AC = ['SRF', 'NAVINFLUOR', 'FLUOROCHEM', 'HAVELLS', 'BLUESTARCO', 'KIRLPNU', 'PRECWIRE'];
@@ -228,16 +228,48 @@ test('parity: every MCP tool gives the same result as the website door', () => {
     c('request_delete_basket', { basket_id: b.id, reason: 'x' });
     c('get_upgrade_link', { billing: 'monthly' });
     c('get_activity', {});
+    // the rest of the website, through the same ops
+    c('get_stock', { symbol: 'SRF', basket_id: b.id });
+    c('get_orders', { basket_id: b.id });
+    const pend = st.orders.find(o => o.status === 'pending');
+    c('update_order', { order_id: pend.id, qty: 1 });
+    c('rebalance_plan', { basket_id: b.id });
+    c('get_notifications', { tab: 'pending' });
+    c('mark_alerts_read', {});
+    c('get_news_flags', {});
+    const fl = st.flags.find(f => f.status === 'open');
+    c('update_news_flag', { flag_id: fl.id, note: 'edited' });
+    c('delete_news_flag', { flag_id: fl.id });
+    c('get_journal', {});
+    st.journal.unshift({ id: 'j1', date: st.clock, basketId: b.id, symbol: 'SRF', name: 'SRF', action: 'Kept anyway', rule: 'x', reason: '', priceThen: 100 });
+    const j = st.journal[0];
+    c('update_journal', { id: j.id, reason: 'why' });
+    c('delete_journal', { id: j.id });
+    c('what_if', { basket_id: b.id, rule_id: 'de', green: 0.3, red: 0.6 });
+    c('share_card', { basket_id: b.id });
+    c('get_settings', {});
+    c('set_notif', { push: true });
+    c('duplicate_basket', { basket_id: b.id });
+    const t = c('create_basket', { name: 'Mine', kind: 'tracking', holdings: [{ symbol: 'NTPC', qty: 5 }] }).data.basket;
+    c('set_holding', { basket_id: t.id, symbol: 'NTPC', qty: 9, avg_price: 300 });
+    c('delete_candidate', { symbol: 'TESTCO' });
+    const todo = st.alerts.find(a => !a.action) || st.alerts[0];
+    c('dismiss_alert', { alert_id: todo.id });
+    c('restore_alert', { alert_id: todo.id });
+    const key = dispatch(st, 'get_activity', {}, 'you').data.todo.find(x => x.kind === 'invest' || x.kind === 'basket')?.key;
+    if (key) { c('decline_todo', { key }); c('restore_todo', { key }); }
+    c('clear_alerts', {});
     return out;
   };
   const a = run('you'), b = run('claude');
   for (const t of TOOLS) {
+    const op = TOOL_OP[t.name] || t.name;
     assert.ok(PARITY[t.name], `website path for ${t.name}`);
-    assert.ok(t.name in a, `exercised ${t.name}`);
-    assert.deepEqual(a[t.name], b[t.name], t.name);
+    assert.ok(op in a, `exercised ${t.name}`);
+    assert.deepEqual(a[op], b[op], t.name);
   }
 });
-function strip(x) { return JSON.parse(JSON.stringify(x, (k, v) => (['source', 'edited_by', 'editedBy', 'createdAt', 'confirmedBy', 'activity', 'by', 'detail'].includes(k) ? undefined : v))); }
+function strip(x) { return JSON.parse(JSON.stringify(x, (k, v) => (['source', 'edited_by', 'editedBy', 'createdAt', 'confirmedBy', 'cancelledBy', 'clearedBy', 'activity', 'by', 'detail'].includes(k) ? undefined : v))); }
 
 test('refill ladder holds cash and asks for new stocks when nothing fits', () => {
   const st = createState();
@@ -306,9 +338,9 @@ test('Claude connection status: only Claude calls connect; every call stamps whe
   assert.ok(!Number.isNaN(Date.parse(s.lastClaudeCall.time)));
   // A refused (person-only) call still proves Claude reached the app.
   const st2 = createState();
-  assert.equal(dispatch(st2, 'clear_alerts', {}, 'claude').error.code, 'person_only');
+  assert.equal(dispatch(st2, 'confirm_order', { order_ids: [] }, 'claude').error.code, 'person_only');
   s = ok(dispatch(st2, 'get_state', {}, 'you'));
-  assert.equal(s.claudeConnected, true); assert.equal(s.lastClaudeCall.op, 'clear_alerts');
+  assert.equal(s.claudeConnected, true); assert.equal(s.lastClaudeCall.op, 'confirm_order');
 });
 
 test('activity: the user\'s own actions are logged as "you", look-ups never crowd out actions, settled drafts stop asking', () => {
@@ -379,7 +411,8 @@ test('rules can be edited per basket, as defaults, or everywhere (and with no ba
   let r = dispatch(st, 'get_rules', {}, 'claude');
   assert.equal(r.ok, true); assert.equal(r.data.scope, 'defaults'); assert.equal(r.data.metrics.length, 13);
   for (const actor of ['claude', 'you']) {
-    for (const [op, a] of [['toggle_rule', { rule_id: 'vol', enabled: false }], ['set_rule', { rule_id: 'de', green: 0.5, red: 1 }], ['reset_rules', { scope: 'defaults' }], ['apply_default_rules', {}]]) {
+    assert.equal(dispatch(st, 'reset_rules', { scope: 'defaults' }, actor).ok, true, 'reset is the way back to the defaults, on Free too');
+    for (const [op, a] of [['toggle_rule', { rule_id: 'vol', enabled: false }], ['set_rule', { rule_id: 'de', green: 0.5, red: 1 }], ['apply_default_rules', {}]]) {
       r = dispatch(st, op, a, actor);
       assert.equal(r.ok, false, `${op} by ${actor} on Free`); assert.equal(r.error.code, 'pro_feature'); assert.match(r.error.free_alternative, /read-only/);
     }

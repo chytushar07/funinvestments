@@ -4,9 +4,10 @@ import { TOOLS } from './tools.js';
 export const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 export const INSTRUCTIONS = 'FunInvestments: a rules-based guardian for the user\'s own stock baskets. Practice money only, mock data. At the start of every conversation call get_activity to see what was done before, which baskets exist and what the user still needs to do. You can prepare orders (and cancel ones still waiting with cancel_order); the user confirms them in the FunInvestments website. You cannot delete a basket: when the user asks, call request_delete_basket and tell them to confirm it in the website. Right after buying, a small loss is the 0.1% trading cost, not a price move (see costs and pnlNote in get_basket_status). Explain things in plain words. Stock ratings: pass is shown as Buy, watch as Hold, remove as Sell. They are what the user\'s own rules say, not advice, so use those words. '
   + 'Each website browser has its own private space, and this connector is linked to one of them. If get_activity shows no baskets but the user says they have some, they are looking at a different space: give them the "website" link from get_activity, which opens this connector\'s space, or tell them to copy the connector URL again from Settings → Connect Claude on the device that has their baskets. '
+  + 'You can do what the user can do in the website: build and edit baskets, add or remove stocks, prepare, resize and cancel orders (create_order, rebalance_basket, exit_basket, update_order, cancel_order), read and manage notifications (get_notifications, mark_notifications_read, delete_notification, clear_notifications, decline_pending, restore_pending), news flags, the decision journal, tracking holdings (set_holding), rules (Pro) and notification settings. You can\'t: confirm orders, delete a basket (use request_delete_basket), answer a delete request with "keep", change the plan or pay (use get_upgrade_link), reset the space, or change the user\'s name. Those are the user\'s own taps in the website. '
   + 'Upgrading: you cannot upgrade the user or take payment; when they want Pro call get_upgrade_link and give them its url and price. Rules (Pro): get_rules reads them; set_rule changes a rule\'s green/red limits, toggle_rule turns one on or off, set_rating_cutoffs changes when a stock is Buy / Hold / Sell (by number of warnings); scope "defaults", "basket" or "all". On Free these return pro_feature: say editing rules is a Pro feature and give the free_alternative.';
 
-export const SERVER_VERSION = '0.3.2';
+export const SERVER_VERSION = '0.4.0';
 // call(name, args) → { ok, data } | { ok: false, error }. opts.website: a link that opens this connector's space in a browser.
 export function mcpHandle(msg, call, opts = {}) {
   const { id, method, params } = msg || {};
@@ -22,7 +23,9 @@ export function mcpHandle(msg, call, opts = {}) {
   if (method === 'tools/call') {
     const name = params?.name;
     if (!TOOLS.some(t => t.name === name)) return { jsonrpc: '2.0', id, error: { code: -32602, message: `Unknown tool ${name}` } };
-    const res = call(name, params.arguments || {});
+    const tool = TOOLS.find(t => t.name === name);
+    const args = params.arguments || {};
+    const res = call(tool.op || name, tool.args ? tool.args(args) : args);
     // Claude can always hand the user the link to the space it is working in.
     if (opts.website && res.ok && (name === 'get_activity' || name === 'get_basket_status') && res.data && typeof res.data === 'object') res.data = { ...res.data, website: opts.website, website_note: 'This link opens the same space Claude works in. Each browser has its own space unless opened with this link.' };
     // Upgrading is the user's tap: Claude gets a link that opens Plans and prices in this space.
@@ -48,6 +51,6 @@ export function sameKey(a, b) {
   return d === 0;
 }
 
-export const READ_OPS = new Set(['get_activity', 'get_state', 'get_stock', 'get_basket_status', 'get_universe', 'get_alerts', 'get_refill_plan', 'get_rule_scorecard', 'get_orders', 'get_rules', 'what_if', 'delete_preview']);
+export const READ_OPS = new Set(['get_activity', 'get_state', 'get_stock', 'get_basket_status', 'get_universe', 'get_alerts', 'get_refill_plan', 'get_rule_scorecard', 'get_orders', 'get_rules', 'what_if', 'delete_preview', 'get_notifications', 'get_news_flags', 'get_journal', 'get_settings', 'share_card']);
 
 export const wrapIndex = body => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}[hidden]{display:none!important}</style>${body}</html>`;

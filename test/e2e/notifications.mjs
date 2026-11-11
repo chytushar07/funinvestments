@@ -1,11 +1,12 @@
 import puppeteer from 'puppeteer-core';
 const B = process.env.B || 'http://localhost:8787';
+const K = process.env.K || 'fi_demo_7f3a9c21';
 const b = await puppeteer.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
 const p = await b.newPage(); await p.setViewport({ width: 390, height: 800, deviceScaleFactor: 1 });
 const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type() === 'error' && errs.push(m.text()));
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const call = (op, a = {}) => p.evaluate(async (op, a) => { const r = await (await fetch('/api/' + op, { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': localStorage.getItem('fi_space_key') || '' }, body: JSON.stringify({ args: a }) })).json(); if (!r.ok) throw new Error(op + ': ' + JSON.stringify(r.error)); return r.data; }, op, a);
-const claude = (name, args = {}) => p.evaluate(async (name, args) => { const r = await (await fetch('/mcp/fi_demo_7f3a9c21', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) })).json(); return r; }, name, args);
+const claude = (name, args = {}) => p.evaluate(async ([name, args, K]) => { const r = await (await fetch('/mcp/' + K, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) })).json(); return r; }, [name, args, K]);
 const S = () => call('get_state');
 const clickText = async (txt, sel = 'button') => { const [el] = await p.$$(`xpath/.//${sel}[normalize-space(.)="${txt}" or starts-with(normalize-space(.), "${txt}")]`); if (!el) throw new Error('no button: ' + txt); await el.click(); await wait(700); };
 const tab = lab => clickText(lab, 'button[@role="tab"]');
@@ -96,8 +97,8 @@ await step('G. Delete request → Decline keeps basket', async () => {
 
 await step('H. Delete request → Review → Only sell, keep the basket (the reported bug)', async () => {
   const bk = await delReq(true);
-  await clickText('Review'); await wait(500); await clickText('Only sell, keep the basket'); await wait(400);
-  await clickText('Review the sells'); await wait(800); await clickText('Sell all'); await wait(800);
+  await clickText('Review'); await wait(500); await clickText('Only sell, keep the basket'); await wait(800);
+  await clickText('Sell all'); await wait(800);
   const st = await S(); const b2 = st.baskets.find(b => b.id === bk.id);
   check('sold: basket empty, cash back', b2 && !b2.isInvested && st.cash > 99000);
   check('delete request cleared (no stuck next step)', !b2.deleteRequest && !st.todo.some(t => t.kind === 'delete'));

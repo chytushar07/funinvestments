@@ -15,7 +15,7 @@ test('Free: every Pro feature is blocked with a free alternative; basics work', 
   assert.equal(code('duplicate_basket', { basket_id: b.id }), 'pro_feature');
   assert.equal(code('create_basket', { name: 'T', kind: 'tracking', holdings: [{ symbol: 'SRF', qty: 1 }] }), undefined, '1 tracking allowed');
   assert.equal(code('create_basket', { name: 'T2', kind: 'tracking', holdings: [{ symbol: 'OIL', qty: 1 }] }), 'pro_feature');
-  for (const [op, a] of [['set_rule', { basket_id: b.id, rule_id: 'de', green: 0.4 }], ['toggle_rule', { basket_id: b.id, rule_id: 'vol', enabled: false }], ['set_rating_cutoffs', { basket_id: b.id, buy_below: 3 }], ['reset_rules', { basket_id: b.id }], ['apply_default_rules', {}], ['set_basket_rule', { basket_id: b.id, min_stocks: 4 }], ['what_if', { basket_id: b.id, rule_id: 'de' }], ['share_card', { basket_id: b.id }], ['set_notif', { push: true }]])
+  for (const [op, a] of [['set_rule', { basket_id: b.id, rule_id: 'de', green: 0.4 }], ['toggle_rule', { basket_id: b.id, rule_id: 'vol', enabled: false }], ['set_rating_cutoffs', { basket_id: b.id, buy_below: 3 }], ['apply_default_rules', {}], ['set_basket_rule', { basket_id: b.id, min_stocks: 4 }], ['what_if', { basket_id: b.id, rule_id: 'de' }], ['share_card', { basket_id: b.id }], ['set_notif', { push: true }]])
     assert.equal(code(op, a), 'pro_feature', op);
   assert.equal(code('create_basket', { name: 'C', symbols: AC, rules: { de: { green: 0.3 } } }), 'pro_feature', 'custom rules at creation');
   assert.equal(code('set_rule', { basket_id: b.id, rule_id: 'de', green: 0.4 }, 'claude'), 'pro_feature', 'Claude too');
@@ -23,6 +23,7 @@ test('Free: every Pro feature is blocked with a free alternative; basics work', 
   for (let i = 0; i < 3; i++) ok('add_news_flag', { symbol: 'SRF', metric: 'roe' });
   assert.equal(code('add_news_flag', { symbol: 'SRF', metric: 'roe' }), 'pro_feature', '3 flags a month');
   ok('get_rules', { basket_id: b.id }); ok('create_order', { basket_id: b.id, side: 'buy', amount: 20000 });
+  ok('reset_rules', { basket_id: b.id }); // the way back to the defaults stays open on Free
 });
 
 test('Free: max 8 stocks a basket, Pro 12', () => {
