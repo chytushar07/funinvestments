@@ -11,5 +11,9 @@
   },
   "durable_objects": { "bindings": [{ "name": "STORE", "class_name": "Store" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Store"] }],
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  // Settings for Cloudflare preview builds. Each preview gets its own empty saved state.
+  "previews": {
+    "durable_objects": { "bindings": [{ "name": "STORE", "class_name": "Store" }] }
+  }
 }
