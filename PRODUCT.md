@@ -28,7 +28,7 @@ their rules helped.
 | Live licensed data | Cost decision after demand is proven; data sits behind one interface |
 
 **Three wow moments in the first 2 minutes**
-1. One sentence in Claude (or a pasted ticker list) becomes a scored basket: ✓ Pass / ! Watch / ✕ Remove.
+1. One sentence in Claude (or a pasted ticker list) becomes a scored basket: ✓ Buy / = Hold / ✕ Sell (the user's own rules, not advice).
 2. Paste a news headline → the app flags Debt/Equity and drafts a sell for you to confirm.
 3. The Scorecard shows how your exact rules would have done every June, 2018–2025, on day one.
 
@@ -53,7 +53,7 @@ their rules helped.
 
 **Identity.** Name: FunInvestments. Mark: a rounded shield with a rising spark — "a guardian with a grin".
 Palette: deep slate ink with a coral brand accent (fun) and calm neutrals (trust). Status uses its own
-hues — sky (Pass), amber (Watch), orchid (Remove) — never the price green/red.
+hues — sky (Buy), amber (Hold), orchid (Sell) — never the price green/red.
 Type: Manrope (UI and big numbers, tabular figures) + JetBrains Mono (tickers, data).
 
 **Patterns from Groww** (patterns only, no brand): dark first, big numbers, rounded cards, bottom nav
@@ -151,17 +151,17 @@ Events are stored in `state.events` and printed to the console in the prototype.
 ## Assumptions and self-created rules
 
 1. "Correct": an added/kept stock is correct if it beat Nifty 50 TRI over the next 12 months; a removal is correct if the stock lagged it.
-2. Basket defaults: min 6, max 12, 20% per stock, 40% per value-chain stage, 10% per Watch stock, rebalance at 5-point drift.
+2. Basket defaults: min 6, max 12, 20% per stock, 40% per value-chain stage, 10% per Hold stock, rebalance at 5-point drift.
 3. Rules apply to all of a user's baskets in v1 (one rule set per user).
    Hosted on Cloudflare, each visitor gets a private space (signed key, own Durable Object); the original owner key opens the original shared space.
-4. Anti-churn: a Pass stock drops to Watch only at 5+ points (buffer); daily metrics (traded value, volatility) need 2 consecutive breaching checks; a removed stock can't be refilled for 90 days.
+4. Anti-churn: a Buy stock drops to Hold only at 5+ points (buffer); daily metrics (traded value, volatility) need 2 consecutive breaching checks; a removed stock can't be refilled for 90 days.
 5. Event rules (Pro): surveillance listing and auditor exit = critical red; late results and rating downgrade = red (2 points).
 6. News flags: a "worse" flag on a critical metric drafts a sell marked "Based on news, not yet in results". The next filing confirms (status recomputes) or clears (draft cancelled).
-7. Refill ladder: Pass by fewest points → Watch by fewest points (capped 10%) → hold cash + "Ask Claude for candidates". Stage cap checked at every step.
+7. Refill ladder: Buy by fewest points → Hold by fewest points (capped 10%) → hold cash + "Ask Claude for candidates". Stage cap checked at every step.
 8. Fills: last close ± 0.1%, max 5% of the stock's daily traded value. Corporate actions ignored.
-9. Free: 1 basket (≤ 8 stocks) + 1 Tracking basket, default thresholds, weekly checks, critical alerts instant, ₹1,00,000 paper money, 3 news flags/month, 2025 scorecard summary. Pro: everything else.
+9. Free: 1 basket (≤ 8 stocks) + 1 Tracking basket, default thresholds, weekly checks, critical alerts instant, ₹1,00,000 paper money, 3 news flags/month, 2025 scorecard summary. Pro: everything else, unlimited baskets, ₹499/month, ₹1,349/quarter or ₹4,499/year (mock checkout, no payment).
 10. Mock data: 32 NSE AC value-chain symbols (verified on NSE). Prices seeded from closes on 9 Nov 2026; every metric, filing and history value is mock, shaped after the user's research doc (statuses and yearly group averages match it). Demo clock starts 1 Sep 2026, before Precision Wires' September filing.
-11. Missing AC share counts as a missing number (3+ missing → Watch).
+11. Missing AC share counts as a missing number (3+ missing → Hold).
 
 ---
 

@@ -101,7 +101,7 @@ test('news flag is confirmed by the next filing; a wrong guess is cleared', () =
   assert.equal(st.flags.find(f => f.symbol === 'SUBROS').status, 'cleared');
 });
 
-test('scheduler drafts a sell when a held stock turns Remove; two strikes for daily metrics', () => {
+test('scheduler drafts a sell when a held stock turns Sell; two strikes for daily metrics', () => {
   const st = createState();
   const b = ok(dispatch(st, 'create_basket', { name: 'AC', symbols: AC }, 'you')).basket;
   invest(st, b.id);

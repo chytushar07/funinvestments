@@ -5,7 +5,7 @@ import { openSheet } from './store.js';
 export const GLOSSARY = {
   // ---- statuses & scoring ----
   status: { t: 'Buy, Hold, Sell', b: 'What this basket\'s rules say about a stock. They are your rules, not advice.', list: ['✓ Buy: passes the rules. Fine to buy or keep.', '= Hold: some warning signs. Keep it, but don\'t add more (at most 10% of the basket).', '✕ Sell: breaks a must-pass rule or has too many warnings. The app prepares a sell for you to confirm.'] },
-  warnings: { t: 'Warnings', b: 'Each rule shows green, amber or red. Amber adds 1 warning, red adds 2.', list: ['0–3 warnings: Buy', '4–8 warnings: Hold', 'More than 8: Sell'] },
+  warnings: { t: 'Warnings', b: 'Each rule shows green, amber or red. Amber adds 1 warning, red adds 2.', list: ['0–3 warnings: Buy', '4–8 warnings: Hold', 'More than 8: Sell', 'Each basket has its own rules: change them with ⚙ Edit rules on the basket page.'] },
   mustpass: { t: 'Must-pass rule ★', b: 'The 5 most important safety rules. A single red on any of them means Sell, however good the rest looks.', list: ['Daily trading', 'Owner shares pledged', 'Debt vs equity', 'Interest cover', 'Loss-making years'] },
   // ---- the 13 rules ----
   adtv: { t: 'Daily trading', b: 'The average value of shares bought and sold each day. Low trading means it can be hard to sell without moving the price.', ex: '₹10 crore a day or more is comfortable. Under ₹2 crore is risky.' },
@@ -37,7 +37,7 @@ export const GLOSSARY = {
   rebalance: { t: 'Rebalance', b: 'Buying and selling small amounts to bring every stock back to its planned share of the basket.' },
   segment: { t: 'Segment', b: 'The part of the industry a company works in, like Power or Oil & gas. Limiting each segment stops the basket from depending on one area.' },
   theme: { t: 'Theme share', b: 'How much of a company\'s business comes from the basket\'s theme. A company with only 5% of its sales from air conditioners isn\'t really an AC stock.', ex: 'Default: needs at least 20%.' },
-  limits: { t: 'Basket limits', b: 'Rules for the basket as a whole: how many stocks it holds and the most any one stock or segment can take.' },
+  limits: { t: 'Basket limits', b: 'Rules for the basket as a whole: how many stocks it holds and the most any one stock or segment can take.', list: ['Change them in the basket: ⚙ Edit rules, then the limits at the bottom (Pro).'] },
   replacement: { t: 'Replacement', b: 'When a basket drops below its minimum number of stocks, the app picks the next best stock: Buy-rated stocks first, then Hold-rated ones, and keeps cash if nothing fits.' },
   cooldown: { t: 'Cool-down', b: 'A stock sold by the rules can\'t come back for 90 days. This stops buying and selling the same stock back and forth.' },
   newsflag: { t: 'News flag', b: 'Your note that a news story may change one of the numbers, like a jump in borrowing. If it hits a must-pass rule, the app prepares a sell. The next quarterly results confirm or clear it.' },
@@ -51,7 +51,7 @@ export const GLOSSARY = {
   claudeurl: { t: 'Your connector URL', b: 'This link lets Claude read and prepare things in your FunInvestments. It works like a password, so share it with no one.', list: ['Paste it into "Remote MCP server URL" in Claude.', 'Leave Advanced settings empty.'] },
   // ---- scorecard ----
   backtest: { t: 'Past test', b: 'We applied this basket\'s rules every June from 2018 to 2025 using past numbers, then checked how each stock did over the next 12 months. All data here is mock.' },
-  goodexits: { t: 'Good exit calls', b: 'Of all the stocks the rules said to remove, how many then did worse than the Nifty 50 over the next year. Those exits saved you from underperformance.', ex: '28 of 73 means 28 removals were right and 45 stocks did better after being dropped.' },
+  goodexits: { t: 'Good exit calls', b: 'Of all the stocks the rules rated Sell (dropped), how many then did worse than the Nifty 50 over the next year. Those exits saved you from underperformance.', ex: '28 of 73 means 28 removals were right and 45 stocks did better after being dropped.' },
   keptbeat: { t: 'Kept stocks beat the market', b: 'In how many years the stocks the rules kept (Buy and Hold) did better on average than the Nifty 50 over the next 12 months.' },
   lossavoided: { t: 'Biggest loss avoided', b: 'The worst 12-month fall among the stocks the rules removed. Not holding it is the loss you avoided.' },
   grew: { t: '₹100 grew to', b: 'If you had put ₹100 into the kept stocks each June (equal amounts) and rolled it over every year, compared with ₹100 in the Nifty 50 index including dividends.' },

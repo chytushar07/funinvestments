@@ -9,7 +9,7 @@ Educational tool · Paper trades only · Not investment advice · All prices and
 
 ```bash
 npm start            # website + REST + MCP endpoint → http://localhost:8787
-npm test             # rules, refill, backtest, CRUD, plans, parity (16 tests)
+npm test             # rules, refill, backtest, CRUD, plans, parity (26 tests)
 ```
 
 No dependencies. Node 18+.
@@ -32,7 +32,7 @@ within ~2 seconds. Then try: *"Build me a basket from my research"* (attach `res
 
 | Path | What |
 |---|---|
-| `engine/rules.js` | 13 metrics + event rules → points → Pass / Watch / Remove |
+| `engine/rules.js` | 13 metrics + event rules → points → ✓ Buy / = Hold / ✕ Sell (ids `pass` / `watch` / `remove`) |
 | `engine/core.js` | One backend for both doors: baskets, scheduler, refill ladder, `execute(order)`, plans |
 | `engine/scorecard.js` | Day-one backtest and Rule Scorecard |
 | `engine/market.js` | Market-data interface (`getQuote`, `getFundamentals`, `getHistory`) — mock provider |
@@ -45,12 +45,14 @@ within ~2 seconds. Then try: *"Build me a basket from my research"* (attach `res
 
 ## What you can do in the website
 
-- **Home**: browse stocks in horizontal rows (Top movers, Energy, AC value chain, Pass the rules), search, create a basket, and copy "Build with Claude" prompts.
+- **Home**: browse stocks in horizontal rows (Top movers, Energy, AC value chain, Rated Buy), search, create a basket, and copy "Build with Claude" prompts.
 - **Explore**: search, filter (theme, sector, status, profitable 2+ years), sort, **Select** several stocks → Create basket. Add, edit or delete your own stocks.
-- **Basket**: Overview · Stocks · Rules · Scorecard. Each basket has its own 13 rules and limits. ⋯ menu: edit name/note/theme, duplicate, reset rules, delete (holdings are sold at the last price back to cash).
+- **Basket**: Overview · Stocks · Rules · Scorecard. Each basket has its own 13 rules and limits; **⚙ Edit rules** (next to the name and in the ⋯ menu) opens the Rules tab. ⋯ menu: edit name/note/theme, duplicate, reset rules, delete (holdings are sold at the last price back to cash).
 - **Stocks tab**: Edit → ✕ removes a stock (held stocks draft a sell first). Tracking baskets: add, edit, remove holdings.
 - **Orders**: review drafts, change quantities, cancel one, confirm all, or "Keep anyway" with a reason (saved to the journal, editable).
 - **Alerts**: Why?, act, dismiss one, clear all. **Stock page**: add to any basket, buy/sell, flag news, edit or withdraw a flag, set theme share.
+- **Plans**: Free (1 basket) or Pro, unlimited baskets: ₹499/month, ₹1,349/quarter or ₹4,499/year (mock checkout, no payment; prices come from `PRICES` in `engine/core.js`).
+- **Settings → Notifications**: allow browser notifications and send a test. Urgent alerts (a must-pass rule breaks) notify on every plan; "Every change" (Pro) also notifies for other alerts and what Claude prepares. Email digest is coming soon.
 
 Destructive actions (delete basket, delete stock, clear alerts) and confirming orders are website-only; Claude can't do them.
 

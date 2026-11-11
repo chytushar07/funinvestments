@@ -26,7 +26,7 @@ export function backtest(ruleSet, history, names = {}, opts = {}) {
       if (s.status === 'pass') pass++; else if (s.status === 'watch') watch++;
       const correct = isKept ? row.next12 > nifty : row.next12 < nifty;
       (isKept ? kept : removed).push(row.next12);
-      const trigger = isKept ? `${s.status === 'pass' ? 'Pass' : 'Watch'} · ${s.points} pts` : s.reasons[0];
+      const trigger = isKept ? `${s.status === 'pass' ? 'Buy' : 'Hold'} · ${s.points} warning${s.points === 1 ? '' : 's'}` : s.reasons[0];
       log.push({ year: y, symbol: row.symbol, name: names[row.symbol] || row.symbol, action: isKept ? 'keep' : 'remove', status: s.status, points: s.points, trigger, next12: row.next12, nifty, correct });
       if (!isKept) {
         for (const id of s.reds) {

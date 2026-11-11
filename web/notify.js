@@ -44,8 +44,8 @@ export function check(S) {
   const freshC = acts.filter(a => num(a.id) > last.c).reverse();
   last = { a: Math.max(last.a, topA), c: Math.max(last.c, topC) }; save();
   const pushAll = !!S.notif?.push, visible = document.visibilityState === 'visible';
-  for (const a of fresh.slice(-3)) {
-    if (!a.critical && !pushAll) continue;
+  // Pick what to announce first, then cap it, so a burst of small alerts can't push out an urgent one.
+  for (const a of fresh.filter(x => x.critical || pushAll).slice(-3)) {
     const shown = browser(a.critical ? '⚠ A must-pass rule broke' : 'FunInvestments', a.text, 'alert-' + a.id, 'alerts');
     if (a.critical && (visible || !shown)) toast(a.text, { action: 'Review', go: 'alerts' });
   }

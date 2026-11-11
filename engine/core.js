@@ -36,7 +36,7 @@ const FREE_ALTERNATIVE = {
   'basket limits': 'On Free, basket limits stay at their defaults.',
   'what-if': 'Previewing rule changes needs Pro.',
   'share card': 'Sharing rule results needs Pro.',
-  'push and email alerts': 'On Free, alerts show in the app; urgent alerts are always on.',
+  'push and email alerts': 'On Free, urgent alerts still arrive as browser notifications; other alerts show in the app.',
 };
 const proError = feature => new ApiError('pro_feature', `Pro feature: ${feature}`, {
   upgrade: '#pricing', feature,
@@ -222,6 +222,7 @@ export function execute(order, quote, adtvCr) {
 // ---------------- checks (scheduler) ----------------
 const DAILY_RULES = new Set(DEFAULT_RULES.filter(r => r.cadence === 'daily').map(r => r.id));
 const STATUS_LABEL = { pass: '✓ Buy', watch: '= Hold', remove: '✕ Sell' };
+const STATUS_WORD = { pass: 'Buy', watch: 'Hold', remove: 'Sell' };
 
 export function checkBasket(st, b, kind) {
   const changes = [];
@@ -506,7 +507,7 @@ const OPS = {
       b.niftyAtInvest = st.nifty;
     }
     st.baskets.push(b);
-    for (const s of final) logDecision(st, { basketId: b.id, symbol: s, action: 'added', trigger: `${b.statusPrev[s]} at creation`, source: actor });
+    for (const s of final) logDecision(st, { basketId: b.id, symbol: s, action: 'added', trigger: `${STATUS_WORD[b.statusPrev[s]] || 'Rated'} at creation`, source: actor });
     st.onboarded = true;
     track(st, 'basket_created', { source: actor, kind, n: final.length, theme });
     const bt = basketBacktest(st, b).summary;
@@ -586,7 +587,7 @@ const OPS = {
     }
     if (b.kind === 'tracking') b.holdings[sym] = b.holdings[sym] || { qty: 0, avg: st.prices[sym] };
     b.symbols.push(sym); b.statusPrev[sym] = s.status; b.editedBy = actor; b.updatedAt = st.clock;
-    logDecision(st, { basketId: b.id, symbol: sym, action: 'added', trigger: `${s.status} · ${s.points} pts`, source: actor });
+    logDecision(st, { basketId: b.id, symbol: sym, action: 'added', trigger: `${STATUS_WORD[s.status]} · ${s.points} warning${s.points === 1 ? '' : 's'}`, source: actor });
     return { basket: basketView(st, b) };
   },
 
