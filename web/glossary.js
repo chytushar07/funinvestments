@@ -27,6 +27,7 @@ export const GLOSSARY = {
   ev_late: { t: 'Late results', b: 'The company filed its quarterly results late.' },
   ev_rating: { t: 'Credit rating cut', b: 'A rating agency lowered its view of the company\'s ability to repay debt.' },
   // ---- money & basket ----
+  democlock: { t: 'Demo date', b: 'This is a practice app, so the date moves only when you move it. Jump ahead to see what your rules do as time passes.', list: ['+1 day: one trading day passes and the daily rule checks run.', '+1 quarter: about three months pass and new quarterly results arrive.'] },
   practice: { t: 'Practice money', b: 'Every account starts with ₹1,00,000 of pretend money. Orders fill at the last closing price, but no real shares are bought.' },
   nifty: { t: 'Nifty 50', b: 'India\'s main stock market index: the 50 largest listed companies. "vs Nifty 50" shows whether you did better or worse than simply owning the whole market.' },
   invested: { t: 'Money put in', b: 'The total you have spent buying the shares now in this basket.' },
@@ -43,6 +44,10 @@ export const GLOSSARY = {
   keepanyway: { t: 'Keep anyway', b: 'You chose not to follow a rule. Your reason is saved in the decision journal so you can later see whether overriding helped.' },
   tracking: { t: 'Tracking basket', b: 'Your real shares, typed in by you. The rules check them and send alerts, but the app never places orders. You sell in your own broker.' },
   exit: { t: 'Exit basket', b: 'Sells every share in the basket at the last price and returns the money to your practice cash. The basket, its stocks and rules stay, so you can invest again later.' },
+  // ---- Claude ----
+  claudestatus: { t: 'Connected or not', b: 'Connected means Claude has reached this app at least once through your link. "Last used" is the last time it did.', list: ['Not connected: finish the steps, then ask Claude one question.', 'Check status looks again right now.', 'If you remove FunInvestments inside Claude, this still shows the last time it was used.'] },
+  claudesaved: { t: 'Claude and this app', b: 'Nothing is lost when a chat ends. Baskets, orders and everything Claude did stay saved here.', list: ['Home shows your next step.', 'Activity shows what Claude did.', 'Claude can prepare orders. Only you can confirm them, delete baskets or clear alerts.'] },
+  claudeurl: { t: 'Your connector URL', b: 'This link lets Claude read and prepare things in your FunInvestments. It works like a password, so share it with no one.', list: ['Paste it into "Remote MCP server URL" in Claude.', 'Leave Advanced settings empty.'] },
   // ---- scorecard ----
   backtest: { t: 'Past test', b: 'We applied this basket\'s rules every June from 2018 to 2025 using past numbers, then checked how each stock did over the next 12 months. All data here is mock.' },
   goodexits: { t: 'Good exit calls', b: 'Of all the stocks the rules said to remove, how many then did worse than the Nifty 50 over the next year. Those exits saved you from underperformance.', ex: '28 of 73 means 28 removals were right and 45 stocks did better after being dropped.' },
@@ -51,6 +56,11 @@ export const GLOSSARY = {
   grew: { t: '₹100 grew to', b: 'If you had put ₹100 into the kept stocks each June (equal amounts) and rolled it over every year, compared with ₹100 in the Nifty 50 index including dividends.' },
   rightpct: { t: 'Right %', b: 'The share of stocks removed by this rule that then did worse than the market. Higher means the rule is good at spotting trouble.' },
   typical: { t: 'Typical', b: 'The middle result (median): half the stocks did better, half did worse.' },
+  // ---- About page ----
+  twice: { t: 'Daily checks', b: 'Prices and trading move every day, so the app does not act on one bad day.', list: ['First time a daily must-pass number breaks its limit: you get a heads-up, nothing else.', 'Still broken at the next check: the stock is marked Remove and a sell is prepared for you.', 'Back in range: the count resets.', 'Free checks other status changes weekly, Pro daily. A must-pass break always alerts at once.'] },
+  results: { t: 'Quarterly results', b: 'Companies report new numbers every three months. When they arrive, every rule is checked again with the new numbers.', list: ['A must-pass rule breaks: the stock is marked Remove and a sell is prepared.', 'You confirm the sell, or keep the stock and note your reason.', 'If the basket drops below its minimum, the app suggests the next best stock.', 'Open news flags on that number are confirmed or cleared.'] },
+  claude: { t: 'Connect Claude', b: 'Optional. Claude can research stocks, build baskets and prepare orders in your account. Only you can confirm an order.', list: ['Open Claude Connectors and add a custom connector.', 'Paste the name and URL from Settings.', 'Ask Claude: "What\'s pending in FunInvestments?"', 'Nothing is lost when a chat ends. Everything Claude did stays saved here.'] },
+  plandemo: { t: 'Free and Pro', b: 'The plan switch is a demo. No payment is taken, and you can switch back anytime.', list: ['Urgent alerts are on every plan, never behind a paywall.', 'Pro is ₹199 a month or ₹1,999 a year.'] },
 };
 
 export function Info({ k, label, extra }) {

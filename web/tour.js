@@ -6,7 +6,7 @@ import { store, go } from './store.js';
 const firstBasket = () => store.S?.baskets.find(b => b.kind === 'model') || store.S?.baskets[0];
 
 export const STEPS = [
-  { route: 'home', sel: '[data-tour="search"]', t: 'Find any stock', b: 'Search 55 Indian stocks by name, symbol or sector, like "Energy" or "Voltas".' },
+  { route: 'home', sel: '[data-tour="search"]', t: 'Find any stock', b: () => `Search ${store.S?.universe.length || 55} Indian stocks by name, symbol or sector, like "Energy" or "Voltas".` },
   { route: 'home', sel: '[data-tour="movers"]', t: 'Browse stocks', b: 'Rows of stocks you can swipe through. Each card shows the price, today\'s change and a status: ✓ Pass, ! Watch or ✕ Remove. Tap a card to see why.' },
   { route: 'home', sel: '[data-tour="plan"]', t: 'Free or Pro', b: 'Switch plans here to see what Pro unlocks. It\'s a demo: no payment is taken.' },
   { route: 'home', sel: '[data-tour="create"]', t: 'Create a basket', b: 'A basket is a small group of stocks you invest in together, with its own safety rules. Pick stocks by hand here.' },
@@ -19,7 +19,7 @@ export const STEPS = [
     b: () => (firstBasket() ? 'Overview shows value and where the money is. Stocks lets you add or remove. Rules lets you change this basket\'s rules. Scorecard is the past test: how these rules did every year since 2018. The ⋯ menu has edit, duplicate, exit (sell everything) and delete.' : 'Create a basket and it appears here, with its value, return and how it compares with the Nifty 50.') },
   { route: 'orders', sel: '[data-tour="nav-orders"]', t: 'Orders wait for you', b: 'Orders prepared by you, the rules or Claude wait here. Change a quantity, confirm, cancel, or keep a stock anyway with a reason.' },
   { route: 'alerts', sel: '[data-tour="nav-alerts"]', t: 'Alerts', b: 'You hear when a stock\'s status changes, new quarterly results arrive, or a basket needs a replacement. Tap "Why?" for the numbers behind it.' },
-  { route: 'home', sel: '[data-tour="clock"]', t: 'Move time forward', b: 'This is a demo. +1d and +1q move the clock a day or a quarter so you can watch the rules check your baskets and new results arrive.' },
+  { route: 'home', sel: '[data-tour="clock"]', t: 'Move time forward', b: 'This is a demo, so you move the date yourself. +1 day runs the daily rule checks. +1 quarter brings new quarterly results.' },
   { route: 'about', sel: '[data-tour="nav-about"]', t: 'Come back anytime', b: 'About lists everything you can do, compares Free and Pro, and restarts this tour.' },
 ];
 const val = v => (typeof v === 'function' ? v() : v);

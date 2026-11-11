@@ -285,3 +285,81 @@ test('create_basket keeps every segment within its limit of the final basket', (
   assert.ok(b.skipped.filter(x => /Basket full/.test(x.why)).length > 0);
   assert.equal(b.basket.count, 8);
 });
+
+test('Claude connection status: only Claude calls connect; every call stamps when it was last seen', () => {
+  const st = createState();
+  let s = ok(dispatch(st, 'get_state', {}, 'you'));
+  assert.equal(s.claudeConnected, false); assert.equal(s.lastClaudeCall, null);
+  ok(dispatch(st, 'create_basket', { name: 'Mine', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'RELIANCE'] }, 'you'));
+  assert.equal(ok(dispatch(st, 'get_state', {}, 'you')).claudeConnected, false, 'the website\'s own actions never count');
+  ok(dispatch(st, 'get_activity', {}, 'claude'));
+  s = ok(dispatch(st, 'get_state', {}, 'you'));
+  assert.equal(s.claudeConnected, true); assert.equal(s.lastClaudeCall.op, 'get_activity');
+  assert.ok(!Number.isNaN(Date.parse(s.lastClaudeCall.time)));
+  // A refused (person-only) call still proves Claude reached the app.
+  const st2 = createState();
+  assert.equal(dispatch(st2, 'clear_alerts', {}, 'claude').error.code, 'person_only');
+  s = ok(dispatch(st2, 'get_state', {}, 'you'));
+  assert.equal(s.claudeConnected, true); assert.equal(s.lastClaudeCall.op, 'clear_alerts');
+});
+
+test('activity: the user\'s own actions are logged as "you", look-ups never crowd out actions, settled drafts stop asking', () => {
+  const st = createState();
+  const b = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'RELIANCE'] }, 'you')).basket;
+  const drafted = ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 50000 }, 'claude')).orders;
+  let S = ok(dispatch(st, 'get_state', {}, 'you'));
+  assert.equal(S.activity[0].actor, 'claude'); assert.equal(S.activity[0].pending, true, 'Claude\'s draft still waits for the user');
+  assert.equal(S.activity[1].actor, 'you'); assert.match(S.activity[1].text, /Created basket "Energy"/);
+  ok(dispatch(st, 'confirm_order', { order_ids: drafted.map(o => o.id) }, 'you'));
+  dispatch(st, 'confirm_order', { order_ids: ['nope'] }, 'you'); // nothing filled: not logged
+  dispatch(st, 'add_stock', { basket_id: b.id, symbol: 'NOSUCH' }, 'you'); // a failed tap is a toast, not history
+  ok(dispatch(st, 'set_plan', { plan: 'pro' }, 'you')); ok(dispatch(st, 'get_stock', { symbol: 'NTPC' }, 'you'));
+  S = ok(dispatch(st, 'get_state', {}, 'you'));
+  assert.equal(S.activity.length, 3, 'create, draft, confirm');
+  assert.equal(S.activity[0].actor, 'you'); assert.equal(S.activity[0].kind, 'change'); assert.match(S.activity[0].text, /^Bought \d+ stocks \(₹[\d,]+\) in "Energy"$/);
+  assert.equal(S.activity[1].pending, false, 'the draft is settled once confirmed');
+  for (let i = 0; i < 400; i++) dispatch(st, 'get_universe', {}, 'claude');
+  assert.ok(st.activity.length <= 300);
+  S = ok(dispatch(st, 'get_state', {}, 'you'));
+  assert.equal(S.activity.filter(a => a.kind !== 'read').length, 3, 'actions survive a flood of look-ups');
+  assert.ok(S.activity.filter(a => a.kind === 'read').length <= 20);
+  const tool = ok(dispatch(st, 'get_activity', { limit: 500 }, 'claude')).activity;
+  for (const k of ['id', 'at', 'clock', 'actor', 'tool', 'ok', 'text', 'kind']) assert.ok(k in tool[0], `get_activity keeps ${k}`);
+  assert.ok(tool.some(a => a.actor === 'you'));
+});
+
+test('to-do: most urgent first, and an alert stops being a to-do once its order is confirmed or cancelled', () => {
+  const st = createState();
+  const todo = () => ok(dispatch(st, 'get_state', {}, 'you')).todo;
+  const a = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'RELIANCE'] }, 'you')).basket;
+  assert.deepEqual(todo().map(t => t.kind), ['basket'], '5 of the 6 fit the segment limit: one short of the minimum');
+  for (const x of st.baskets) x.limits.minStocks = 5;
+  assert.deepEqual(todo().map(t => t.kind), ['invest']);
+  invest(st, a.id);
+  for (const o of st.orders.filter(o => o.status === 'pending')) ok(dispatch(st, 'cancel_order', { order_id: o.id }, 'you'));
+  assert.deepEqual(todo(), [], 'invested and nothing waiting');
+  const flag = ok(dispatch(st, 'add_news_flag', { symbol: 'PETRONET', metric: 'de', impact: 'worse', note: 'Borrowing jumped' }, 'you'));
+  assert.equal(flag.drafted_orders.length, 1);
+  let t = todo();
+  assert.deepEqual(t.map(x => x.kind), ['orders', 'flags'], 'the urgent alert is covered by its sell order, not listed twice');
+  assert.equal(t[0].priority, 0); assert.deepEqual(t[0].ids, [flag.drafted_orders[0].id]);
+  ok(dispatch(st, 'set_plan', { plan: 'pro' }, 'you'));
+  const b = ok(dispatch(st, 'create_basket', { name: 'Second', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'GAIL', 'RELIANCE', 'ONGC'] }, 'you')).basket;
+  for (const x of st.baskets) x.limits.minStocks = Math.min(x.limits.minStocks, x.symbols.length);
+  ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 20000 }, 'claude'));
+  t = todo();
+  assert.deepEqual(t.map(x => [x.kind, x.basketId]).slice(0, 2), [['orders', a.id], ['orders', b.id]], 'a sell the rules or news asked for comes before a plain buy');
+  assert.deepEqual(t.map(x => x.priority), [...t.map(x => x.priority)].sort((x, y) => x - y));
+  ok(dispatch(st, 'cancel_order', { order_id: flag.drafted_orders[0].id, reason: 'Wait for results' }, 'you'));
+  t = todo();
+  assert.ok(!t.some(x => x.kind === 'alerts'), 'kept anyway: the alert about that order is settled');
+  assert.ok(!t.some(x => x.kind === 'orders' && x.ids.includes(flag.drafted_orders[0].id)));
+  assert.match(st.activity[0].text, /^Kept Petronet LNG anyway$/);
+});
+
+test('activity text uses singular for one stock', () => {
+  const st = createState();
+  ok(dispatch(st, 'create_basket', { name: 'Solo', symbols: ['SRF'] }, 'you'));
+  const a = ok(dispatch(st, 'get_activity', {}, 'you')).activity.find(x => /Created basket "Solo"/.test(x.text));
+  assert.match(a.text, /with 1 stock(?!s)/);
+});

@@ -2,9 +2,9 @@
 // changed updates (no full-page refresh). No AI: every number comes from the engine.
 import { html, render, useState, useEffect } from './vendor/preact-htm.js';
 import * as api from './client.js';
-import { store, refresh, act, go } from './store.js';
+import { store, refresh, act, go, toast, openSheet, confirmDialog } from './store.js';
 import { I, Logo, short } from './lib.js';
-import { Home, Explore, Stock, Baskets, Basket, Orders, Alerts, Pricing, Account, About, Activity } from './pages.js';
+import { Home, Explore, Stock, Baskets, Basket, Orders, Alerts, Pricing, Account, About, Activity, PlanSwitch } from './pages.js';
 import { Tour } from './tour.js';
 import { SheetHost } from './sheets.js';
 
@@ -35,15 +35,42 @@ const NAV = S => [
   ['about', 'About', I.about, 0],
 ];
 
+const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const JUMP = {
+  advance_day: d => `Now ${short(d.clock)} · ${d.filings.length ? `new results: ${[...new Set(d.filings.map(f => f.symbol))].slice(0, 3).join(', ')}` : 'daily checks run'}`,
+  advance_quarter: d => { const f = new Set(d.filings.map(x => x.symbol)).size, c = d.changes.length; return [`Now ${short(d.clock)}`, f && `${count(f, 'company', 'companies')} reported`, c ? count(c, 'status change', 'status changes') : 'no status changes'].filter(Boolean).join(' · '); },
+};
+const refreshNow = async () => { if (await refresh()) toast('Up to date'); };
+const resetDemo = () => confirmDialog({ title: 'Start the demo over?', body: 'This erases every basket, order, alert, news flag and the activity log, and puts back ₹1,00,000 of practice money. It can\'t be undone.', confirm: 'Reset demo', danger: true,
+  onConfirm: async () => { const r = await act('reset', {}, { ok: 'Demo reset · fresh start' }); if (r?.ok) go('home'); } });
+
 function TopBar() {
   const S = store.S;
+  const [menu, setMenu] = useState(false);
+  const [busy, setBusy] = useState(null);
+  useEffect(() => {
+    if (!menu) return;
+    const off = e => { if (!e.target.closest?.('.topmenu')) setMenu(false); };
+    const key = e => { if (e.key === 'Escape') setMenu(false); };
+    document.addEventListener('click', off); document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('click', off); document.removeEventListener('keydown', key); };
+  }, [menu]);
+  const jump = async op => { if (busy) return; setBusy(op); await act(op, {}, { ok: JUMP[op] }); setBusy(null); };
+  const pick = fn => () => { setMenu(false); fn(); };
   return html`<div class="topbar">
     <button class="brand" onClick=${() => go('home')} aria-label="FunInvestments home"><${Logo}/><span>FunInvestments</span></button>
     <span class="spacer"></span>
-    <span class="clock" data-tour="clock" title="Demo clock: move time forward to run the daily rule checks"><span class="num">${short(S.clock)}</span>
-      <button onClick=${() => act('advance_day', {}, { ok: d => `${short(d.clock)} · ${d.filings.length ? `filing: ${d.filings.map(f => f.symbol).join(', ')}` : 'checks run'}` })} aria-label="Advance 1 day">+1d</button>
-      <button onClick=${() => act('advance_quarter', {}, { ok: d => `${short(d.clock)} · ${d.filings.length} filings · ${d.changes.length} changes` })} aria-label="Advance 1 quarter">+1q</button></span>
-    <button class="iconbtn" onClick=${() => go('account')} aria-label="Settings">${I.user}</button>
+    <div class="clock" data-tour="clock" role="group" aria-label="Demo date" aria-busy=${!!busy}>
+      <button class="clock-date" title="Demo date: this is a practice app, so you move time yourself. Tap to learn more." aria-label=${`Demo date ${short(S.clock)}. What is this?`} onClick=${() => openSheet({ type: 'info', k: 'democlock' })}>
+        <span class="clock-k">Demo date</span><span class="num">${short(S.clock)}</span></button>
+      <button class="clock-step ${busy === 'advance_day' ? 'busy' : ''}" disabled=${!!busy} title="Jump 1 day: the daily rule checks run" aria-label="Jump 1 day" onClick=${() => jump('advance_day')}>+1<span class="u-s">d</span><span class="u-l"> day</span></button>
+      <button class="clock-step ${busy === 'advance_quarter' ? 'busy' : ''}" disabled=${!!busy} title="Jump 1 quarter: new quarterly results arrive" aria-label="Jump 1 quarter" onClick=${() => jump('advance_quarter')}>+1<span class="u-s">q</span><span class="u-l"> quarter</span></button></div>
+    <div class="topmenu">
+      <button class="iconbtn" aria-haspopup="menu" aria-expanded=${menu} aria-label="Settings, refresh, reset" onClick=${() => setMenu(!menu)}>${I.user}</button>
+      ${menu && html`<div class="topmenu-pop" role="menu">
+        <button class="menuitem" role="menuitem" onClick=${pick(() => go('account'))}>Settings</button>
+        <button class="menuitem" role="menuitem" onClick=${pick(refreshNow)}>Refresh</button>
+        <button class="menuitem danger" role="menuitem" onClick=${pick(resetDemo)}>Reset demo</button></div>`}</div>
   </div>`;
 }
 
@@ -66,7 +93,7 @@ function App() {
       <button class="brand" onClick=${() => go('home')}><${Logo}/><div>FunInvestments<small>by Tushar</small></div></button>
       ${nav.map(([r, l, ic, n]) => html`<button key=${r} data-tour=${'nav-' + r} class="navlink ${active === r ? 'on' : ''}" aria-current=${active === r ? 'page' : null} onClick=${() => go(r)}>${ic}${l}${n ? html`<span class="count">${n}</span>` : null}</button>`)}
       <div class="foot">
-        ${S.plan === 'free' ? html`<button class="btn small primary block" onClick=${() => go('pricing')}>Try Pro</button>` : html`<span class="tag claude" style="align-self:flex-start">Pro</span>`}
+        <${PlanSwitch} rail/>
         <button class="navlink ${route === 'account' ? 'on' : ''}" onClick=${() => go('account')}>${I.user}Settings</button></div>
     </nav>
     <main class="main" id="main"><div class="col">
@@ -87,5 +114,8 @@ function App() {
   await api.init();
   await refresh();
   // Server mode: show changes Claude makes from outside the page.
-  setInterval(async () => { if (document.hidden) return; const r = await api.changedSince(api.currentRev()); if (r) await refresh(); }, 2500);
+  const sync = async () => { if (document.hidden) return; const r = await api.changedSince(api.currentRev()); if (r) await refresh(); };
+  setInterval(sync, 2500);
+  document.addEventListener('visibilitychange', sync); // back on this tab: catch up at once, not after the next tick
+  api.onExternalChange(refresh);
 })();
