@@ -104,6 +104,10 @@ export default {
       headers.set('x-fi-space', space === 'main' ? '' : space);
       return env.STORE.get(env.STORE.idFromName(space)).fetch(new Request(request, { headers }));
     }
-    return env.ASSETS.fetch(request);
+    // Revalidate app files on every load so a phone never keeps running an old version after a deploy.
+    const res = await env.ASSETS.fetch(request);
+    const out = new Response(res.body, res);
+    out.headers.set('cache-control', 'no-cache');
+    return out;
   },
 };

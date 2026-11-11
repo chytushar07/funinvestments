@@ -41,7 +41,7 @@
 .plan-switch.home { margin-top: 0; gap: 8px; flex-wrap: nowrap; }
 .plan-switch.home .linkbtn { margin-left: auto; padding: 0; }
 .plan-switch.in-rail { flex-wrap: nowrap; justify-content: space-between; gap: 8px; margin: 0; padding: 0 2px 0 12px; }
-.plan-switch.in-rail .linkbtn { display: none; }
+.plan-switch.in-rail .linkbtn { padding: 0; font-size: 12px; }
 @media (min-width: 1000px) { .plan-switch.home { display: none; } }
 
 /* ---------- Your next step: one tight card ---------- */

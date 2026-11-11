@@ -282,8 +282,8 @@ const SHEETS = {
           <span class="faint" style="font-size:12px">Past test, good exit calls: ${wi.backtest.before.removalsRight} of ${wi.backtest.before.removalsTotal} → ${wi.backtest.after.removalsRight} of ${wi.backtest.after.removalsTotal}</span></div>` : null}
         ${def && store.S.baskets.length > 0 && html`<label class="row" style="gap:10px;font-size:13.5px;cursor:pointer"><input type="checkbox" checked=${all} onChange=${e => setAll(e.target.checked)}/> Also apply to all ${store.S.baskets.length} of my baskets</label>`}
         <div class="sticky-cta"><button class="btn primary block" disabled=${!valid || !changed} onClick=${async () => { const args = def ? { scope: all ? 'all' : 'defaults', rule_id: r.id, green: g, red: rd } : { basket_id: b.id, rule_id: r.id, green: g, red: rd }; const x = await act('set_rule', args, { quiet: true }); if (x?.ok) { closeSheet(); await refresh(); toast(def ? `Saved to ${x.data.applied_to}` : `Saved · ${x.data.changed.length} rating change${x.data.changed.length === 1 ? '' : 's'}`); } }}>${changed ? 'Save' : 'Change a limit to save'}</button></div>`
-      : html`<div class="card lockcard"><b>🔒 Change limits with Pro</b>
-          <span class="muted">On Free every basket uses these limits. You can still turn this rule on or off with its switch in the list. Pro lets you set your own limits, and lets Claude change them for you.</span>
+      : html`<div class="card lockcard"><b>🔒 Rules are read-only on Free</b>
+          <span class="muted">On Free every basket uses the 13 default rules, read-only. Pro lets you switch rules on or off, set your own limits, and lets Claude change them for you.</span>
           <div class="row" style="gap:8px;margin-top:4px"><button class="btn small primary" onClick=${() => go('home')}>Try Pro (demo)</button><button class="btn small ghost" onClick=${() => go('pricing')}>See plans</button></div></div>`}
     </div>`;
   },

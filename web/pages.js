@@ -374,6 +374,14 @@ function BasketStocks({ b }) {
     </div></div>`;
 }
 
+
+// Free: rules are read-only. One clear card instead of controls that silently do nothing.
+function RulesLock() {
+  return html`<div class="card lockcard"><b>🔒 Rules are read-only on Free</b>
+    <span class="muted">Every basket uses the 13 default rules. Pro lets you switch rules on or off, set your own limits, and lets Claude edit them for you.</span>
+    <div class="row" style="gap:8px;margin-top:4px"><button class="btn small primary" onClick=${() => go('home')}>Try Pro (demo)</button><button class="btn small ghost" onClick=${goPlans}>See plans</button></div></div>`;
+}
+
 function BasketRules({ b }) {
   const S = store.S;
   const pro = S.plan === 'pro';
@@ -383,7 +391,7 @@ function BasketRules({ b }) {
   const steps = [['minStocks', 'min_stocks', 'Fewest stocks', 1, 1, 12, ''], ['maxStocks', 'max_stocks', 'Most stocks', 1, 1, 12, ''], ['maxStockWeight', 'max_stock_weight', 'Max in one stock', 5, 5, 100, '%'], ['maxStageWeight', 'max_stage_weight', 'Max in one segment', 5, 5, 100, '%'], ['maxWatchWeight', 'max_watch_weight', 'Max in a Hold stock', 5, 5, 100, '%'], ['driftTrigger', 'drift_trigger', 'Rebalance when off by', 1, 1, 30, ' pts'], ['minTheme', 'min_theme', 'Min theme share', 5, 0, 100, '%']];
   const dirty = lim && Object.keys(L).some(k => lim[k] !== L[k]);
   return html`<div class="stack" style="margin-top:14px">
-    <div class="card rulehelp"><b>Edit this basket's rules</b><span class="muted">${pro ? 'Tap a rule to change its limits · use the switch to turn it off · basket limits are at the bottom.' : 'Use the switch to turn a rule off. Changing limits (for example debt under 0.5×) needs Pro.'} Changes apply to this basket only, and Claude can make them too. <button class="linkbtn" style="font-size:13px;padding:0" onClick=${() => go('rules')}>Default rules for new baskets →</button></span></div>
+    ${pro ? html`<div class="card rulehelp"><b>Edit this basket's rules</b><span class="muted">Tap a rule to change its limits · use the switch to turn it off · basket limits are at the bottom. Changes apply to this basket only, and Claude can make them too. <button class="linkbtn" style="font-size:13px;padding:0" onClick=${() => go('rules')}>Default rules for new baskets →</button></span></div>` : html`<${RulesLock}/>`}
     <div class="row between"><span class="eyebrow">13 safety rules · this basket only <${Info} k="warnings"/></span>${pro ? html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Reset rules to default?', body: 'Thresholds, switches and limits go back to the defaults for this basket.', confirm: 'Reset', onConfirm: () => act('reset_rules', { basket_id: b.id }, { ok: 'Rules reset' }) })}>Reset</button>` : html`<button class="linkbtn" onClick=${() => go('pricing')}>Edit with Pro</button>`}</div>
     <div class="card list" style="padding:2px 16px">${b.rules.metrics.map(r => {
       const red = b.stocks.filter(s => s.reds.includes(r.id)).length, amber = b.stocks.filter(s => s.ambers.includes(r.id)).length;
@@ -395,7 +403,7 @@ function BasketRules({ b }) {
           <span class="grow" style="min-width:0"><span class="t">${r.label}${r.critical ? html` <span class="star" title="Must-pass rule">★</span>` : ''}</span>
           <span class="s"><span class="num">good ${thr.replace(' · ', ' · bad ')}${r.unit === '%' ? '%' : r.unit === '×' ? '×' : ''}</span>${red || amber ? ` · ${[red && `${red} red`, amber && `${amber} amber`].filter(Boolean).join(', ')}` : ''}${r.source === 'claude' ? ' · By Claude' : r.source === 'you' ? ' · By you' : ''}</span></span></button>
         <${Info} k=${r.id}/>
-        <${Switch} id=${`rt-${b.id}-${r.id}`} checked=${r.enabled} label="${r.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: r.id, enabled: v }, { ok: v ? `${r.label} on` : `${r.label} off` })}/></div>`;
+        <${Switch} id=${`rt-${b.id}-${r.id}`} checked=${r.enabled} disabled=${!pro} label="${r.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: r.id, enabled: v }, { ok: v ? `${r.label} on` : `${r.label} off` })}/></div>`;
     })}</div>
     <div class="faint" style="font-size:12px">★ Must-pass: one red means Sell <${Info} k="mustpass"/></div>
     ${b.kind === 'model' && html`<div class="row between" style="margin-top:8px"><span class="eyebrow">Basket limits <${Info} k="limits"/></span>${pro ? null : html`<span class="lock">Pro</span>`}</div>
@@ -404,7 +412,7 @@ function BasketRules({ b }) {
       ${dirty && html`<div class="row" style="gap:8px"><button class="btn primary" style="flex:1" onClick=${async () => { const args = { basket_id: b.id }; for (const [k, a] of steps) args[a] = lim[k]; const r = await act('set_basket_rule', args, { ok: 'Limits saved' }); if (r?.ok) setLim(null); }}>Save limits</button><button class="btn ghost" onClick=${() => setLim(null)}>Undo</button></div>`}`}
     <div class="row between" style="margin-top:8px"><span class="eyebrow">Company events</span>${pro ? null : html`<span class="lock">Pro</span>`}</div>
     <div class="card list" style="padding:2px 16px">${b.rules.events.map(e => html`<div class="li" key=${e.id}><span class="grow"><span class="t">${e.label}${e.critical ? html` <span class="star">★</span>` : ''}</span></span><${Info} k=${e.id}/>
-      <${Switch} id=${`ev-${b.id}-${e.id}`} checked=${e.enabled} label="${e.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: e.id, enabled: v }, { ok: v ? 'On' : 'Off' })}/></div>`)}</div>
+      <${Switch} id=${`ev-${b.id}-${e.id}`} checked=${e.enabled} disabled=${!pro} label="${e.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: e.id, enabled: v }, { ok: v ? 'On' : 'Off' })}/></div>`)}</div>
   </div>`;
 }
 
@@ -517,33 +525,15 @@ export function Alerts() {
 
 // ---------- Pricing ----------
 export function Pricing() {
-  const S = store.S;
-  const PR = S.prices || { monthly: 499, quarterly: 1349, yearly: 4499 };
-  const [billing, setBilling] = useState('yearly');
-  const pro = S.plan === 'pro';
-  const OPT = { monthly: ['Monthly', PR.monthly, 'month', 1], quarterly: ['Quarterly', PR.quarterly, 'quarter', 3], yearly: ['Yearly', PR.yearly, 'year', 12] };
-  const [label, price, per, months] = OPT[billing];
-  const save = PR.monthly * months - price, perMonth = Math.round(price / months);
-  const inr = n => '₹' + n.toLocaleString('en-IN');
   return html`<div>
     <div class="row" style="margin-top:4px"><button class="iconbtn" onClick=${() => history.back()} aria-label="Back">${I.back}</button><h1>Plans</h1></div>
-    <div class="row between wrap" style="margin-top:16px;gap:10px"><div class="seg">${Object.entries(OPT).map(([v, o]) => html`<button key=${v} class=${billing === v ? 'on' : ''} onClick=${() => setBilling(v)}>${o[0]}</button>`)}</div>${save > 0 && html`<span class="tag claude">Save ${inr(save)}</span>`}</div>
-    <div class="plans" style="margin-top:14px">
-      <div class="plan"><div><b>Free</b><div class="big" style="font-size:28px">₹0</div></div>
-        <ul><li>1 basket · 8 stocks</li><li>1 tracking basket</li><li>13 safety rules per basket</li><li>Weekly checks</li><li class="safety">Urgent alerts instantly</li><li>₹1,00,000 practice money</li><li>3 news flags a month</li><li>Past test: latest year</li><li>Connect Claude</li></ul>
-        ${pro ? html`<button class="btn ghost block" onClick=${() => act('set_plan', { plan: 'free' }, { ok: 'Back on Free' })}>Switch to Free</button>` : html`<button class="btn ghost block" disabled>Current plan</button>`}</div>
-      <div class="plan pro"><div class="row between"><b>Pro</b><span class="tag unl">∞ Unlimited baskets</span></div>
-        <div><span class="big" style="font-size:28px">${inr(price)}</span><span class="muted"> / ${per}</span></div>
-        ${months > 1 && html`<div class="faint" style="font-size:12.5px;margin-top:-6px">${inr(perMonth)} a month, billed ${label.toLowerCase()}</div>`}
-        <ul><li><b>Unlimited baskets</b> · 12 stocks each</li><li>Change any rule's limits</li><li>Claude edits your rules for you</li><li>Company events + basket limits</li><li>Daily checks</li><li>Unlimited news flags</li><li>Full past test 2018–2025</li><li>Preview a rule change first</li><li>See if your overrides helped</li><li>Browser alerts for every change</li><li>Share your rule results</li></ul>
-        ${pro ? html`<button class="btn block" disabled>You're on Pro${S.billing ? ` · ${OPT[S.billing]?.[0] || ''}` : ''}</button>` : html`<button class="btn primary block" onClick=${async () => { const r = await act('set_plan', { plan: 'pro', billing }, { ok: `Pro is on (${label.toLowerCase()}) · mock checkout` }); if (r?.ok) history.back(); }}>Start Pro · ${inr(price)}</button>`}</div>
-    </div>
+    <section class="section"><${PriceCards}/></section>
     <div class="card" style="margin-top:14px;padding:14px 16px"><b style="font-size:14px">One price, every basket</b>
-      <div class="muted" style="font-size:13px;margin-top:4px;line-height:1.5">Paid model baskets elsewhere often cost ₹100–500 a month <i>each</i>. A mutual fund on ₹10 lakh costs ₹5,000–10,000 a year in fees. Pro is ${inr(PR.yearly)} a year for all your baskets, with no per-order fee.</div></div>
+      <div class="muted" style="font-size:13px;margin-top:4px;line-height:1.5">Paid model baskets elsewhere often cost ₹100–500 a month <i>each</i>. A mutual fund on ₹10 lakh costs ₹5,000–10,000 a year in fees. Pro is ₹4,499 a year for all your baskets, with no per-order fee.</div></div>
+    <section class="section"><h2>Free vs Pro, every feature</h2><${PlansTable}/></section>
+    ${store.S.plan === 'pro' && html`<button class="btn ghost block" style="margin-top:12px" onClick=${() => act('set_plan', { plan: 'free' }, { ok: 'Back on Free' })}>Switch to Free</button>`}
     <p class="faint" style="font-size:12px;text-align:center;margin-top:12px">Prototype · mock checkout · no payment taken</p></div>`;
 }
-
-
 
 // ---------- Default rules (global) ----------
 // The rules every new basket starts with. They also rate stocks in Home and Explore.
@@ -554,20 +544,20 @@ export function DefaultRules() {
   const thr = r => (r.id === 'loss' ? `good ${r.green} · bad > ${r.red}` : `good ${r.dir === 'higher' ? '≥' : '≤'} ${r.green} · bad ${r.dir === 'higher' ? '<' : '>'} ${r.red}`) + (r.unit === '%' ? '%' : r.unit === '×' ? '×' : '');
   return html`<div>
     <div class="row" style="margin-top:4px"><button class="iconbtn" onClick=${() => history.back()} aria-label="Back">${I.back}</button><h1>Default rules</h1></div>
-    <div class="card rulehelp" style="margin-top:12px"><b>Your rules for every new basket</b>
-      <span class="muted">These 13 checks rate every stock on Home and Explore, and each new basket starts with them. A basket can then have its own: open it and tap <b>⚙ Edit rules</b>. ${pro ? 'Tap a rule to change its limits; the switch turns it off.' : 'Switches are free. Changing limits (for example debt under 0.5×) needs Pro.'}</span></div>
+    ${pro ? html`<div class="card rulehelp" style="margin-top:12px"><b>Your rules for every new basket</b>
+      <span class="muted">These 13 checks rate every stock on Home and Explore, and each new basket starts with them. A basket can then have its own: open it and tap <b>⚙ Edit rules</b>. Tap a rule to change its limits; the switch turns it off.</span></div>` : html`<div style="margin-top:12px"><${RulesLock}/></div>`}
     <section class="section"><div class="section-head"><span class="eyebrow">13 safety rules · defaults <${Info} k="warnings"/></span>
-      <button class="linkbtn" onClick=${() => confirmDialog({ title: 'Reset default rules?', body: 'The 13 rules go back to the original limits and switches. Your baskets keep their own rules.', confirm: 'Reset', onConfirm: () => act('reset_rules', { scope: 'defaults' }, { ok: 'Default rules reset' }) })}>Reset</button></div>
+      ${pro && html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Reset default rules?', body: 'The 13 rules go back to the original limits and switches. Your baskets keep their own rules.', confirm: 'Reset', onConfirm: () => act('reset_rules', { scope: 'defaults' }, { ok: 'Default rules reset' }) })}>Reset</button>`}</div>
       <div class="card list" style="padding:2px 16px">${R.metrics.map(r => html`<div class="li" key=${r.id}>
         <button class="grow row ruleopen" onClick=${() => openSheet({ type: 'rule', scope: 'defaults', rule: r.id })}>
           <span class="dot ${r.enabled ? 'green' : 'off'}"></span>
           <span class="grow" style="min-width:0"><span class="t">${r.label}${r.critical ? html` <span class="star" title="Must-pass rule">★</span>` : ''}</span><span class="s"><span class="num">${thr(r)}</span>${r.source === 'claude' ? ' · By Claude' : r.source === 'you' ? ' · Edited' : ''}</span></span></button>
         <${Info} k=${r.id}/>
-        <${Switch} id=${`dr-${r.id}`} checked=${r.enabled} label="${r.label} on" onChange=${v => act('toggle_rule', { scope: 'defaults', rule_id: r.id, enabled: v }, { ok: v ? `${r.label} on by default` : `${r.label} off by default` })}/></div>`)}</div>
+        <${Switch} id=${`dr-${r.id}`} checked=${r.enabled} disabled=${!pro} label="${r.label} on" onChange=${v => act('toggle_rule', { scope: 'defaults', rule_id: r.id, enabled: v }, { ok: v ? `${r.label} on by default` : `${r.label} off by default` })}/></div>`)}</div>
       <div class="faint" style="font-size:12px;margin-top:6px">★ Must-pass: one red means Sell <${Info} k="mustpass"/></div></section>
-    <section class="section"><div class="card stack" style="gap:10px"><b>Use these on your baskets too</b>
+    ${pro && html`<section class="section"><div class="card stack" style="gap:10px"><b>Use these on your baskets too</b>
       <span class="muted" style="font-size:13px">${n ? `Copy these rules onto all ${n} basket${n === 1 ? '' : 's'}. Each basket's stock and weight limits stay as they are.` : 'You have no baskets yet. New ones will start with these rules.'}</span>
-      ${n > 0 && html`<button class="btn" onClick=${() => confirmDialog({ title: `Apply to ${n} basket${n === 1 ? '' : 's'}?`, body: 'Each basket\'s 13 rules are replaced by these defaults. Ratings are re-checked at once.', confirm: 'Apply', onConfirm: () => act('apply_default_rules', {}, { ok: d => `Applied to ${d.baskets_updated} basket${d.baskets_updated === 1 ? '' : 's'}` }) })}>Apply to all my baskets</button>`}</div></section>
+      ${n > 0 && html`<button class="btn" onClick=${() => confirmDialog({ title: `Apply to ${n} basket${n === 1 ? '' : 's'}?`, body: 'Each basket\'s 13 rules are replaced by these defaults. Ratings are re-checked at once.', confirm: 'Apply', onConfirm: () => act('apply_default_rules', {}, { ok: d => `Applied to ${d.baskets_updated} basket${d.baskets_updated === 1 ? '' : 's'}` }) })}>Apply to all my baskets</button>`}</div></section>`}
     <p class="faint" style="font-size:12px;margin:10px 2px">Claude can change these too: “Turn off the price-swings rule for all my baskets” or “Make debt stricter in my defaults”.</p>
   </div>`;
 }
@@ -610,6 +600,31 @@ export function Account() {
   </div>`;
 }
 
+
+// ---------- Prices: all three Pro options side by side (no toggle) ----------
+const inrP = n => '₹' + n.toLocaleString('en-IN');
+export function PriceCards() {
+  const S = store.S, pro = S.plan === 'pro';
+  const PR = S.prices || { monthly: 499, quarterly: 1349, yearly: 4499 };
+  const opts = [['monthly', 'Monthly', PR.monthly, 'month', 1], ['quarterly', 'Quarterly', PR.quarterly, 'quarter', 3], ['yearly', 'Yearly', PR.yearly, 'year', 12]];
+  const start = async (v, l) => act('set_plan', { plan: 'pro', billing: v }, { ok: `Pro is on (${l.toLowerCase()}) · mock checkout` });
+  return html`<div class="pricecards">${opts.map(([v, l, price, per, m]) => {
+    const save = PR.monthly * m - price, best = v === 'yearly', mine = pro && (S.billing || 'yearly') === v;
+    return html`<div key=${v} class="pricecard ${best ? 'best' : ''} ${mine ? 'mine' : ''}">
+      <div class="row between"><b>${l}</b>${best ? html`<span class="tag unl">Best value</span>` : save > 0 ? html`<span class="tag claude">Save ${inrP(save)}</span>` : null}</div>
+      <div><span class="pc-price num">${inrP(price)}</span><span class="muted"> / ${per}</span></div>
+      <span class="faint pc-sub">${m > 1 ? `${inrP(Math.round(price / m))} a month${best ? ` · save ${inrP(save)}` : ''}` : 'Cancel anytime'}</span>
+      ${mine ? html`<button class="btn small block" disabled>Your plan ✓</button>` : html`<button class="btn small block ${best ? 'primary' : ''}" onClick=${() => start(v, l)}>${pro ? 'Switch' : 'Start Pro'}</button>`}</div>`;
+  })}</div>
+  <p class="faint" style="font-size:12px;margin:8px 2px 0">Pro: ∞ unlimited baskets, your own limits, Claude edits your rules. Free stays free. Demo: no payment is taken.</p>`;
+}
+export function PlansTable() {
+  const pro = store.S.plan === 'pro';
+  return html`<div class="tablewrap"><table class="plans-table"><thead><tr><th>Feature</th><th class=${pro ? '' : 'cur'}>Free</th><th class=${pro ? 'cur' : ''}>Pro</th></tr></thead>
+    <tbody>${PLAN_ROWS.map(([f, a, b]) => html`<tr key=${f}><td>${f}</td><td class=${pro ? '' : 'cur'}>${cell(a)}</td><td class=${pro ? 'cur' : ''}>${cell(b)}</td></tr>`)}</tbody></table></div>`;
+}
+export const goPlans = () => { go('about'); const t = () => document.getElementById('plans')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(t, 120); setTimeout(t, 450); };
+
 // ---------- Plan switch (demo) ----------
 export function PlanSwitch({ big, home, rail }) {
   const S = store.S;
@@ -617,19 +632,18 @@ export function PlanSwitch({ big, home, rail }) {
   return html`<div class="plan-switch ${big ? 'big' : ''} ${home ? 'home' : ''} ${rail ? 'in-rail' : ''}" data-tour="plan">
     <span class="muted" style="font-size:12.5px">Plan <span class="faint">(demo)</span></span>
     <div class="seg small" role="radiogroup" aria-label="Plan">${[['free', 'Free'], ['pro', 'Pro']].map(([v, l]) => html`<button key=${v} role="radio" aria-checked=${S.plan === v} class=${S.plan === v ? 'on' : ''} onClick=${() => set(v)}>${l}</button>`)}</div>
-    <button class="linkbtn" style="font-size:12.5px" onClick=${() => go('about')}>Compare</button></div>`;
+    <button class="linkbtn" style="font-size:12.5px" onClick=${goPlans}>Compare</button></div>`;
 }
 
 // ---------- About ----------
 // The cards and their expandable examples live in stories.js.
 const PLAN_ROWS = [
   ['Baskets', '1', '∞ Unlimited'], ['Stocks per basket', '8', '12'], ['Tracking baskets (real shares)', '1', 'Unlimited'],
-  ['13 safety rules', true, true], ['Change any rule\'s limits', false, true], ['Claude edits your rules (default + basket)', false, true], ['Company events (auditor quits, rating cuts…)', false, true],
+  ['13 safety rules', true, true], ['Turn rules on or off', false, true], ['Change any rule\'s limits', false, true], ['Claude edits your rules (default + basket)', false, true], ['Company events (auditor quits, rating cuts…)', false, true],
   ['Rule checks', 'Weekly', 'Daily'], ['Urgent alerts the moment a must-pass rule breaks', true, true], ['News flags', '3 a month', 'Unlimited'],
   ['Past test', 'Latest year', '2018–2025'], ['Preview a rule change first', false, true], ['See if your overrides helped', false, true],
   ['Browser alerts for every change', false, true], ['Share your rule results', false, true], ['Connect Claude', true, true], ['Practice money', '₹1,00,000', '₹1,00,000'],
 ];
-const PLAN_SHORT = ['Baskets', 'Stocks per basket', 'Rule checks', 'News flags', 'Past test', 'Change any rule\'s limits'];
 const cell = v => (v === true ? html`<span class="ok" aria-label="Included">✓</span>` : v === false ? html`<span class="faint" aria-label="Not included">—</span>` : v);
 const toConnect = () => { go('account'); setTimeout(() => document.getElementById('connect-claude')?.scrollIntoView({ behavior: 'smooth' }), 150); };
 
@@ -642,7 +656,6 @@ function ClaudeRow() {
 
 export function About() {
   const S = store.S, P = S.planInfo, pro = S.plan === 'pro';
-  const [all, setAll] = useState(false);
   const first = S.baskets.length === 0, seen = tourSeen();
   const models = S.baskets.filter(b => b.kind === 'model').length, tracking = S.baskets.length - models;
   const t = S.todo?.[0];
@@ -658,7 +671,6 @@ export function About() {
   const hot = { confirm: S.pending > 0, flag: openFlags > 0 };
   const rank = id => (first ? 0 : hot[id] ? 0 : ['watch', 'results', 'confirm', 'flag'].includes(id) ? 1 : 2);
   const stories = STORIES.map((s, i) => [s, i]).sort((a, b) => rank(a[0].id) - rank(b[0].id) || a[1] - b[1]).map(x => x[0]);
-  const rows = all ? PLAN_ROWS : PLAN_ROWS.filter(r => PLAN_SHORT.includes(r[0]));
   return html`<div>
     <div class="row between" style="margin-top:4px"><h1>About</h1>${!first && html`<button class="btn small ghost" onClick=${startTour}>Take tour</button>`}</div>
     ${first ? html`<p class="muted" style="margin:8px 0 0;line-height:1.5">Stick to your own investing rules. The app watches; you decide.</p>
@@ -676,10 +688,10 @@ export function About() {
       <div class="li"><span class="grow"><span class="t">A basket's own rules</span><span class="s">Open a basket → ⚙ Edit rules</span></span>${S.baskets.length ? html`<button class="linkbtn" onClick=${() => go('basket-' + S.baskets[0].id)}>Open ${shortName(S.baskets[0].name)}</button>` : html`<button class="linkbtn" onClick=${() => newBasket()}>Create one</button>`}</div></div></section>
     <section class="section"><div class="section-head"><h2>How it works</h2><span class="faint" style="font-size:12px">Tap for an example</span></div>
       <div class="can">${stories.map(s => html`<${Story} key=${s.id} s=${s} tag=${tags[s.id]} hot=${hot[s.id]}/>`)}</div></section>
-    <section class="section about-plans"><div class="section-head"><h2>Free and Pro <${Info} k="plandemo"/></h2><${PlanSwitch}/></div>
-      <div class="tablewrap"><table class="plans-table"><thead><tr><th>Feature</th><th class=${pro ? '' : 'cur'}>Free</th><th class=${pro ? 'cur' : ''}>Pro</th></tr></thead>
-        <tbody>${rows.map(([f, a, b]) => html`<tr key=${f}><td>${f}</td><td class=${pro ? '' : 'cur'}>${cell(a)}</td><td class=${pro ? 'cur' : ''}>${cell(b)}</td></tr>`)}</tbody></table></div>
-      <div class="row between"><button class="linkbtn" aria-expanded=${all} onClick=${() => setAll(!all)}>${all ? 'Show less' : `All ${PLAN_ROWS.length} features`}</button><button class="linkbtn" onClick=${() => go('pricing')}>Prices ›</button></div></section>
+    <section class="section about-plans" id="plans"><div class="section-head"><h2>Plans and prices <${Info} k="plandemo"/></h2><${PlanSwitch}/></div>
+      <${PriceCards}/>
+      <h3 style="margin:18px 0 8px;font-size:15px">Free vs Pro, every feature</h3>
+      <${PlansTable}/></section>
     <${ConnectCard}/>
   </div>`;
 }

@@ -19,15 +19,23 @@ export async function refresh() {
   return done;
 }
 
-let busy = false;
-// Run an engine operation. Shows errors, refreshes the snapshot, never double-submits.
-export async function act(op, args = {}, { ok, quiet } = {}) {
-  if (busy) return null;
-  busy = true;
+// Actions run one after another in tap order. A tap made while an earlier request is still
+// travelling is queued, not dropped (dropping it made switches snap back on slow phone networks).
+// The same action with the same arguments is never sent twice at once (no double orders).
+let chain = Promise.resolve();
+const inFlight = new Set();
+export function act(op, args = {}, opts = {}) {
+  const key = op + JSON.stringify(args);
+  if (inFlight.has(key)) return Promise.resolve(null);
+  inFlight.add(key);
+  const run = chain.then(() => runAct(op, args, opts)).finally(() => inFlight.delete(key));
+  chain = run.catch(() => {});
+  return run;
+}
+async function runAct(op, args, { ok, quiet } = {}) {
   let r;
   try { r = await api.call(op, args); }
-  catch (e) { busy = false; toast(`Can't reach the server · ${e.message}`, { err: true }); return null; }
-  busy = false;
+  catch (e) { toast(`Can't reach the server · ${e.message}`, { err: true }); await refresh(); return null; }
   if (!r.ok) { showError(r.error); await refresh(); return r; }
   if (ok) toast(typeof ok === 'function' ? ok(r.data) : ok);
   if (!quiet) await refresh();

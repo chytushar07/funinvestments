@@ -370,17 +370,19 @@ test('activity text uses singular for one stock', () => {
 test('rules can be edited per basket, as defaults, or everywhere (and with no baskets)', () => {
   const st = createState();
   // No baskets: toggling goes to the defaults instead of failing
-  // On Free, Claude can read rules but editing them through Claude is Pro; the website switch stays free
+  // On Free rules are read-only: anyone can read them, nobody can edit them (website or Claude)
   let r = dispatch(st, 'get_rules', {}, 'claude');
   assert.equal(r.ok, true); assert.equal(r.data.scope, 'defaults'); assert.equal(r.data.metrics.length, 13);
-  r = dispatch(st, 'toggle_rule', { rule_id: 'vol', enabled: false }, 'claude');
-  assert.equal(r.ok, false); assert.equal(r.error.code, 'pro_feature'); assert.match(r.error.free_alternative, /Default rules/);
+  for (const actor of ['claude', 'you']) {
+    for (const [op, a] of [['toggle_rule', { rule_id: 'vol', enabled: false }], ['set_rule', { rule_id: 'de', green: 0.5, red: 1 }], ['reset_rules', { scope: 'defaults' }], ['apply_default_rules', {}]]) {
+      r = dispatch(st, op, a, actor);
+      assert.equal(r.ok, false, `${op} by ${actor} on Free`); assert.equal(r.error.code, 'pro_feature'); assert.match(r.error.free_alternative, /read-only/);
+    }
+  }
+  dispatch(st, 'set_plan', { plan: 'pro' }, 'you');
+  // Pro, no baskets: a switch goes to the default rules
   r = dispatch(st, 'toggle_rule', { rule_id: 'vol', enabled: false }, 'you');
   assert.equal(r.ok, true); assert.equal(r.data.scope, 'defaults'); assert.equal(st.rules.metrics.find(x => x.id === 'vol').enabled, false);
-  // Limits are Pro, with a helpful error
-  r = dispatch(st, 'set_rule', { rule_id: 'de', green: 0.5, red: 1 }, 'claude');
-  assert.equal(r.ok, false); assert.equal(r.error.code, 'pro_feature');
-  dispatch(st, 'set_plan', { plan: 'pro' }, 'you');
   r = dispatch(st, 'set_rule', { rule_id: 'de', green: 0.4, red: 0.9 }, 'claude');
   assert.equal(r.ok, true); assert.equal(st.rules.metrics.find(x => x.id === 'de').green, 0.4);
   // New baskets start with the edited defaults

@@ -30,9 +30,10 @@ export class ApiError extends Error {
 const FREE_ALTERNATIVE = {
   'more baskets': 'On Free you have 1 basket: add the stocks to the existing basket, or exit and delete it first.',
   'more tracking baskets': 'On Free you have 1 tracking basket: add holdings to it instead.',
-  'custom thresholds': 'On Free, create the basket with the default rules; turning rules on or off is free.',
-  'edit thresholds': 'On Free, keep the default limits; you can still turn rules on or off.',
-  'Claude editing your rules': 'On Free the user turns rules on or off themselves in the website: Settings → Default rules, or a basket → ⚙ Edit rules. With Pro, Claude can change default and basket rules.',
+  'custom thresholds': 'On Free, create the basket without custom rules; it uses the 13 default rules.',
+  'edit thresholds': 'On Free every basket uses the 13 default rules, read-only. Pro lets the user (and Claude) switch rules on or off and change their limits, for default rules and each basket.',
+  'edit rules': 'On Free every basket uses the 13 default rules, read-only. Pro lets the user (and Claude) switch rules on or off and change their limits, for default rules and each basket.',
+  'Claude editing your rules': 'On Free every basket uses the 13 default rules, read-only. Pro lets the user (and Claude) switch rules on or off and change their limits, for default rules and each basket.',
   'event rules': 'Company-event rules need Pro; the 13 core rules work on Free.',
   'basket limits': 'On Free, basket limits stay at their defaults.',
   'what-if': 'Previewing rule changes needs Pro.',
@@ -439,7 +440,7 @@ function applyRuleOverrides(st, rules, overrides, actor) {
   for (const [id, o] of Object.entries(overrides || {})) {
     const r = rules.metrics.find(x => x.id === id) || rules.events.find(x => x.id === id);
     if (!r) throw new ApiError('not_found', `No rule "${id}"`);
-    if ((o.green != null || o.red != null) && !isPro(st)) throw proError('custom thresholds');
+    if (!isPro(st)) throw proError('custom thresholds');
     if (r.id.startsWith('ev_') && o.enabled && !isPro(st)) throw proError('event rules');
     if (o.green != null || o.red != null) {
       const g = o.green != null ? Number(o.green) : r.green, rd = o.red != null ? Number(o.red) : r.red;
@@ -700,6 +701,7 @@ const OPS = {
     return { scope: t.scope, applied_to: scopeText(t, st), rule: t.sets[0].metrics.find(x => x.id === a.rule_id), changed };
   },
   toggle_rule(st, a, actor) {
+    if (!isPro(st)) throw proError('edit rules');
     const t = ruleTargets(st, a);
     const find = rs => rs.metrics.find(x => x.id === a.rule_id) || rs.events.find(x => x.id === a.rule_id);
     if (!find(t.sets[0])) throw new ApiError('not_found', `No rule "${a.rule_id}"`);
@@ -711,6 +713,7 @@ const OPS = {
     return { scope: t.scope, applied_to: scopeText(t, st), rule: find(t.sets[0]), changed };
   },
   reset_rules(st, a, actor) {
+    if (!isPro(st)) throw proError('edit rules');
     if (a.scope === 'defaults' || (!a.basket_id && !a.scope && st.baskets.length !== 1)) { st.rules = defaultRuleSet(); return { scope: 'defaults', rules: st.rules }; }
     const b = getBasket(st, a.basket_id);
     b.rules = cloneRules(st.rules); b.limits = { ...DEFAULT_LIMITS, maxStocks: Math.min(DEFAULT_LIMITS.maxStocks, plan(st).maxStocks) };
@@ -728,6 +731,7 @@ const OPS = {
     return { scope: 'basket', basket: { id: b.id, name: b.name }, ...pick(b.rules), limits: b.limits, can_edit_limits: isPro(st) };
   },
   apply_default_rules(st, a, actor) {
+    if (!isPro(st)) throw proError('edit rules');
     const list = a.basket_id ? [getBasket(st, a.basket_id)] : st.baskets;
     for (const b of list) { b.rules = cloneRules(st.rules); b.editedBy = actor; b.updatedAt = st.clock; checkBasket(st, b, 'rules'); }
     return { baskets_updated: list.length };
@@ -1127,7 +1131,7 @@ function dedupe(list) { const seen = new Set(); return list.filter(x => (seen.ha
 
 export const OP_NAMES = Object.keys(OPS);
 // Destructive or money-moving actions stay with the person, in the website.
-// Rule editing through Claude (default rules and basket rules) is a Pro feature. The website keeps free switches.
+// Editing rules (default or basket, switches or limits) is a Pro feature, in the website and through Claude.
 export const CLAUDE_PRO_RULES = new Set(['set_rule', 'toggle_rule', 'reset_rules', 'apply_default_rules', 'set_basket_rule']);
 export const PERSON_ONLY = new Set(['confirm_order', 'set_plan', 'delete_basket', 'delete_candidate', 'delete_journal', 'clear_alerts']);
 
