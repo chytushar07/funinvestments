@@ -232,6 +232,8 @@ input[type=range] { width: 100%; accent-color: var(--brand); }
 /* toast */
 .toast { position: fixed; z-index: 60; left: 50%; transform: translateX(-50%); bottom: calc(90px + env(safe-area-inset-bottom, 0px)); background: var(--fg); color: var(--bg); border-radius: 14px; padding: 11px 14px; font-weight: 700; font-size: 14px; display: flex; gap: 12px; align-items: center; box-shadow: var(--shadow); max-width: min(520px, calc(100vw - 32px)); }
 .toast button { border: 0; background: none; color: var(--brand); font-weight: 800; }
+/* Centred with left:50%, a fixed box only gets half the screen to grow into, so long alerts wrapped narrow. */
+.toast { width: max-content; } .toast > span { min-width: 0; } .toast button { flex: none; white-space: nowrap; }
 .toast.err { background: var(--down); color: #fff; }
 .toast.err button { color: #fff; text-decoration: underline; }
 @media (min-width: 1000px) { .toast { bottom: 24px; } }

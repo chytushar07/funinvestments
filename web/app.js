@@ -5,7 +5,7 @@ import * as notify from './notify.js';
 import * as api from './client.js';
 import { store, refresh, act, go, toast, openSheet, confirmDialog } from './store.js';
 import { I, Logo, short } from './lib.js';
-import { Home, Explore, Stock, Baskets, Basket, Orders, Alerts, Pricing, Account, About, Activity, PlanSwitch } from './pages.js';
+import { Home, Explore, Stock, Baskets, Basket, Orders, Alerts, Pricing, Account, About, Activity, PlanSwitch, DefaultRules } from './pages.js';
 import { Tour } from './tour.js';
 import { SheetHost } from './sheets.js';
 
@@ -14,7 +14,7 @@ function parseHash() {
   const [r, ...rest] = h.split('-');
   if (r === 'basket' && rest.length) return { route: 'basket', param: rest.join('-') };
   if (r === 'stock' && rest.length) return { route: 'stock', param: rest.join('-') };
-  const known = ['home', 'explore', 'baskets', 'orders', 'alerts', 'pricing', 'account', 'about', 'activity'];
+  const known = ['home', 'explore', 'baskets', 'orders', 'alerts', 'pricing', 'account', 'about', 'activity', 'rules'];
   return { route: known.includes(r) ? r : 'home', param: null };
 }
 
@@ -86,7 +86,7 @@ function App() {
   const page = {
     home: () => html`<${Home}/>`, explore: () => html`<${Explore}/>`, stock: () => html`<${Stock} key=${param} symbol=${param}/>`,
     baskets: () => html`<${Baskets}/>`, basket: () => html`<${Basket} key=${param} id=${param}/>`, orders: () => html`<${Orders}/>`,
-    alerts: () => html`<${Alerts}/>`, pricing: () => html`<${Pricing}/>`, account: () => html`<${Account}/>`, about: () => html`<${About}/>`, activity: () => html`<${Activity}/>`,
+    alerts: () => html`<${Alerts}/>`, pricing: () => html`<${Pricing}/>`, account: () => html`<${Account}/>`, about: () => html`<${About}/>`, activity: () => html`<${Activity}/>`, rules: () => html`<${DefaultRules}/>`,
   }[route]();
   const t = store.ui.toast;
   return html`<div class="shell">

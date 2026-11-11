@@ -5,6 +5,7 @@ const METRICS = ['adtv', 'pledge', 'de', 'icr', 'loss', 'vol', 'beta', 'dd', 'ca
 const EVENTS = ['ev_surv', 'ev_auditor', 'ev_late', 'ev_rating'];
 const THEMES = ['ac', 'energy'];
 const STAGES = ['raw', 'parts', 'brands', 'commercial', 'retail', 'oilgas', 'power', 'renew', 'coal'];
+const ruleScope = { type: 'string', enum: ['basket', 'defaults', 'all'], description: 'basket (one basket), defaults (rules for new baskets + stock ratings), or all' };
 const ruleOverride = { type: 'object', properties: { green: { type: 'number' }, red: { type: 'number' }, enabled: { type: 'boolean' }, critical: { type: 'boolean' } } };
 
 export const TOOLS = [
@@ -34,10 +35,10 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { basket_id: basketId } } },
   { name: 'get_basket_status', group: 'Baskets', description: 'Basket value, each stock\'s rating (Buy = pass, Hold = watch, Sell = remove), points, weights, flags and the basket rules. Omit basket_id to list all baskets.',
     inputSchema: { type: 'object', properties: { basket_id: basketId } } },
-  { name: 'set_rule', group: 'Rules', description: 'Change a rule\'s green/red thresholds in one basket (Pro).',
-    inputSchema: { type: 'object', required: ['rule_id'], properties: { basket_id: basketId, rule_id: { type: 'string', enum: METRICS }, green: { type: 'number' }, red: { type: 'number' }, critical: { type: 'boolean' } } } },
-  { name: 'toggle_rule', group: 'Rules', description: 'Turn a rule on or off in one basket. Event rules (ev_*) are Pro.',
-    inputSchema: { type: 'object', required: ['rule_id', 'enabled'], properties: { basket_id: basketId, rule_id: { type: 'string', enum: [...METRICS, ...EVENTS] }, enabled: { type: 'boolean' } } } },
+  { name: 'set_rule', group: 'Rules', description: 'Change a rule\'s green/red thresholds (Pro). scope: "basket" = one basket (default when a basket is named or there is only one), "defaults" = the rules every new basket starts with and that rate stocks in Explore (default when there are no baskets), "all" = defaults and every basket. If it returns pro_feature, tell the user switches (toggle_rule) are free.',
+    inputSchema: { type: 'object', required: ['rule_id'], properties: { basket_id: basketId, scope: ruleScope, rule_id: { type: 'string', enum: METRICS }, green: { type: 'number' }, red: { type: 'number' }, critical: { type: 'boolean' } } } },
+  { name: 'toggle_rule', group: 'Rules', description: 'Turn a rule on or off (free; event rules ev_* are Pro). Same scope as set_rule: "basket", "defaults" or "all".',
+    inputSchema: { type: 'object', required: ['rule_id', 'enabled'], properties: { basket_id: basketId, scope: ruleScope, rule_id: { type: 'string', enum: [...METRICS, ...EVENTS] }, enabled: { type: 'boolean' } } } },
   { name: 'set_basket_rule', group: 'Rules', description: 'Change basket limits: stock count, weight caps, theme share (Pro).',
     inputSchema: { type: 'object', properties: { basket_id: basketId, min_stocks: { type: 'integer' }, max_stocks: { type: 'integer' }, max_stock_weight: { type: 'number' }, max_stage_weight: { type: 'number' }, max_watch_weight: { type: 'number' }, drift_trigger: { type: 'number' }, min_theme: { type: 'number' } } } },
   { name: 'create_order', group: 'Orders', description: 'Draft paper orders. Buy with amount and no symbol splits across the basket by target weights. Orders stay pending until the user confirms them in the website.',
@@ -63,8 +64,8 @@ export const PARITY = {
   remove_stock: 'Basket → Stocks → Edit → ✕',
   exit_basket: 'Basket → Exit basket → Confirm',
   get_basket_status: 'Basket → Overview',
-  set_rule: 'Basket → Rules → tap rule → slider → Save',
-  toggle_rule: 'Basket → Rules → switch',
+  set_rule: 'Basket → ⚙ Edit rules (or Settings → Default rules) → tap rule → slider → Save',
+  toggle_rule: 'Basket → ⚙ Edit rules (or Settings → Default rules) → switch',
   set_basket_rule: 'Basket → Rules → Limits → steppers',
   create_order: 'Basket → Invest ₹ → amount → Confirm',
   get_alerts: 'Alerts tab',

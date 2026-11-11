@@ -226,14 +226,16 @@ const SHEETS = {
   // ---------- rules ----------
   rule({ s }) {
     const S = store.S;
-    const b = S.baskets.find(x => x.id === s.id);
-    const r = b?.rules.metrics.find(x => x.id === s.rule);
+    const def = s.scope === 'defaults';
+    const b = def ? null : S.baskets.find(x => x.id === s.id);
+    const r = (def ? S.rules : b?.rules)?.metrics.find(x => x.id === s.rule);
+    const [all, setAll] = useState(false);
     const pro = S.plan === 'pro';
     const [g, setG] = useState(r?.green);
     const [rd, setRd] = useState(r?.red);
     const [wi, setWi] = useState(null);
     useEffect(() => {
-      if (!pro || !r) return;
+      if (!pro || !r || def) return;
       const t = setTimeout(() => read('what_if', { basket_id: b.id, rule_id: r.id, green: g, red: rd }).then(x => x.ok && setWi(x.data)), 250);
       return () => clearTimeout(t);
     }, [g, rd]);
@@ -243,14 +245,15 @@ const SHEETS = {
     const valid = r.dir === 'higher' ? g >= rd : g <= rd;
     const unit = r.unit === '%' ? '%' : r.unit === '×' ? '×' : '';
     return html`<div class="stack" style="gap:14px"><div class="row between"><h2>${r.long}</h2>${r.critical && html`<span class="tag claude">★ Must-pass</span>`}</div>
-      <span class="muted" style="font-size:13px">Applies to ${b.name} only. <${Info} k=${r.id}/></span>
+      <span class="muted" style="font-size:13px">${def ? 'Default rule: new baskets start with it, and it rates stocks on Home and Explore.' : `Applies to ${b.name} only.`} <${Info} k=${r.id}/></span>
       <div class="field"><label for="rs-g">Green ${r.dir === 'higher' ? 'at or above' : 'at or below'} <b class="num">${g}${unit}</b></label><input type="range" id="rs-g" min=${lo} max=${hi} step=${step} value=${g} disabled=${!pro} onInput=${e => setG(Number(e.target.value))}/></div>
       <div class="field"><label for="rs-r">Red ${r.dir === 'higher' ? 'below' : 'above'} <b class="num">${rd}${unit}</b></label><input type="range" id="rs-r" min=${lo} max=${hi} step=${step} value=${rd} disabled=${!pro} onInput=${e => setRd(Number(e.target.value))}/></div>
       ${!valid && html`<span class="down" style="font-size:13px">Green can't be ${r.dir === 'higher' ? 'below' : 'above'} red.</span>`}
       ${pro ? (wi && valid ? html`<div class="card stack" style="gap:6px"><b>What if</b><span class="muted" style="font-size:13px">${wi.changes.length ? wi.changes.slice(0, 6).map(c => `${shortName(c.name)} ${STATUS[c.from][1]} → ${STATUS[c.to][1]}${c.inBasket ? ' (in basket)' : ''}`).join(' · ') : 'No status changes today'}</span>
           <span class="faint" style="font-size:12px">Past test, good exit calls: ${wi.backtest.before.removalsRight} of ${wi.backtest.before.removalsTotal} → ${wi.backtest.after.removalsRight} of ${wi.backtest.after.removalsTotal}</span></div>` : null)
-        : html`<div class="card row between"><span>Edit thresholds with Pro</span><button class="btn small primary" onClick=${() => go('pricing')}>See plans</button></div>`}
-      <div class="sticky-cta"><button class="btn primary block" disabled=${!pro || !valid || (g === r.green && rd === r.red)} onClick=${async () => { const x = await act('set_rule', { basket_id: b.id, rule_id: r.id, green: g, red: rd }, { quiet: true }); if (x?.ok) { closeSheet(); await refresh(); toast(`Saved · ${x.data.changed.length} status change${x.data.changed.length === 1 ? '' : 's'}`); } }}>Save</button></div></div>`;
+        : html`<div class="card row between"><span>Changing limits needs Pro. The on/off switch is free.</span><button class="btn small primary" onClick=${() => go('pricing')}>See plans</button></div>`}
+      ${def && pro && store.S.baskets.length > 0 && html`<label class="row" style="gap:10px;font-size:13.5px;cursor:pointer"><input type="checkbox" checked=${all} onChange=${e => setAll(e.target.checked)}/> Also apply to all ${store.S.baskets.length} of my baskets</label>`}
+      <div class="sticky-cta"><button class="btn primary block" disabled=${!pro || !valid || (g === r.green && rd === r.red)} onClick=${async () => { const args = def ? { scope: all ? 'all' : 'defaults', rule_id: r.id, green: g, red: rd } : { basket_id: b.id, rule_id: r.id, green: g, red: rd }; const x = await act('set_rule', args, { quiet: true }); if (x?.ok) { closeSheet(); await refresh(); toast(def ? `Saved to ${x.data.applied_to}` : `Saved · ${x.data.changed.length} status change${x.data.changed.length === 1 ? '' : 's'}`); } }}>Save</button></div></div>`;
   },
 
   // ---------- basket menu / edit / delete ----------

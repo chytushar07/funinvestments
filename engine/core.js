@@ -86,6 +86,19 @@ function getBasket(st, id) {
   if (!b) throw new ApiError('not_found', id ? `No basket "${id}"` : 'Pass basket_id (get_basket_status lists them)');
   return b;
 }
+
+// Which rule sets an edit touches. scope: 'basket' (one basket), 'defaults' (the rules new baskets start with,
+// also used to rate stocks in Explore) or 'all' (defaults + every basket). With no scope: a named basket, else
+// the only basket, else the defaults, so a user with no baskets can still change their rules.
+function ruleTargets(st, a) {
+  const scope = a.scope || (a.basket_id || st.baskets.length === 1 ? 'basket' : 'defaults');
+  if (scope === 'defaults') return { scope, sets: [st.rules], baskets: [] };
+  if (scope === 'all') return { scope, sets: [st.rules, ...st.baskets.map(b => b.rules)], baskets: [...st.baskets] };
+  if (scope !== 'basket') throw new ApiError('bad_scope', 'scope must be basket, defaults or all');
+  const b = getBasket(st, a.basket_id);
+  return { scope, sets: [b.rules], baskets: [b] };
+}
+const scopeText = (t, st) => t.scope === 'defaults' ? 'default rules (new baskets + stock ratings)' : t.scope === 'all' ? `default rules and all ${t.baskets.length} basket${t.baskets.length === 1 ? '' : 's'}` : `"${t.baskets[0].name}"`;
 function addAlert(st, a) {
   const alert = { id: nid(st, 'a'), date: st.clock, read: false, critical: false, ...a };
   st.alerts.unshift(alert);
@@ -676,34 +689,39 @@ const OPS = {
   // ---- Rules (per basket) ----
   set_rule(st, a, actor) {
     if (!isPro(st)) throw proError('edit thresholds');
-    const b = getBasket(st, a.basket_id);
-    const r = b.rules.metrics.find(x => x.id === a.rule_id);
-    if (!r) throw new ApiError('not_found', `No rule "${a.rule_id}"`);
-    const before = statusesSnapshot(st, b);
-    applyRuleOverrides(st, b.rules, { [r.id]: { green: a.green, red: a.red, critical: a.critical } }, actor);
-    track(st, 'rule_threshold_edited', { rule: r.id, source: actor });
-    b.updatedAt = st.clock;
-    checkBasket(st, b, 'rules');
-    return { rule: r, changed: diffStatuses(before, statusesSnapshot(st, b)) };
+    const t = ruleTargets(st, a);
+    if (!t.sets[0].metrics.some(x => x.id === a.rule_id)) throw new ApiError('not_found', `No rule "${a.rule_id}"`);
+    const before = t.baskets.map(b => statusesSnapshot(st, b));
+    for (const rs of t.sets) applyRuleOverrides(st, rs, { [a.rule_id]: { green: a.green, red: a.red, critical: a.critical } }, actor);
+    track(st, 'rule_threshold_edited', { rule: a.rule_id, source: actor, scope: t.scope });
+    const changed = [];
+    t.baskets.forEach((b, i) => { b.updatedAt = st.clock; checkBasket(st, b, 'rules'); changed.push(...diffStatuses(before[i], statusesSnapshot(st, b))); });
+    return { scope: t.scope, applied_to: scopeText(t, st), rule: t.sets[0].metrics.find(x => x.id === a.rule_id), changed };
   },
-
   toggle_rule(st, a, actor) {
-    const b = getBasket(st, a.basket_id);
-    const r = b.rules.metrics.find(x => x.id === a.rule_id) || b.rules.events.find(x => x.id === a.rule_id);
-    if (!r) throw new ApiError('not_found', `No rule "${a.rule_id}"`);
-    if (r.id.startsWith('ev_') && !isPro(st)) throw proError('event rules');
-    const before = statusesSnapshot(st, b);
-    r.enabled = !!a.enabled; r.source = actor; b.updatedAt = st.clock;
-    checkBasket(st, b, 'rules');
-    return { rule: r, changed: diffStatuses(before, statusesSnapshot(st, b)) };
+    const t = ruleTargets(st, a);
+    const find = rs => rs.metrics.find(x => x.id === a.rule_id) || rs.events.find(x => x.id === a.rule_id);
+    if (!find(t.sets[0])) throw new ApiError('not_found', `No rule "${a.rule_id}"`);
+    if (a.rule_id.startsWith('ev_') && !isPro(st)) throw proError('event rules');
+    const before = t.baskets.map(b => statusesSnapshot(st, b));
+    for (const rs of t.sets) { const r = find(rs); r.enabled = !!a.enabled; r.source = actor; }
+    const changed = [];
+    t.baskets.forEach((b, i) => { b.updatedAt = st.clock; checkBasket(st, b, 'rules'); changed.push(...diffStatuses(before[i], statusesSnapshot(st, b))); });
+    return { scope: t.scope, applied_to: scopeText(t, st), rule: find(t.sets[0]), changed };
   },
-
   reset_rules(st, a, actor) {
+    if (a.scope === 'defaults' || (!a.basket_id && !a.scope && st.baskets.length !== 1)) { st.rules = defaultRuleSet(); return { scope: 'defaults', rules: st.rules }; }
     const b = getBasket(st, a.basket_id);
     b.rules = cloneRules(st.rules); b.limits = { ...DEFAULT_LIMITS, maxStocks: Math.min(DEFAULT_LIMITS.maxStocks, plan(st).maxStocks) };
     b.editedBy = actor; b.updatedAt = st.clock;
     checkBasket(st, b, 'rules');
     return { basket: basketView(st, b) };
+  },
+  // Copy the default rules onto every basket (switches and limits of each rule; basket size limits stay).
+  apply_default_rules(st, a, actor) {
+    const list = a.basket_id ? [getBasket(st, a.basket_id)] : st.baskets;
+    for (const b of list) { b.rules = cloneRules(st.rules); b.editedBy = actor; b.updatedAt = st.clock; checkBasket(st, b, 'rules'); }
+    return { baskets_updated: list.length };
   },
 
   set_basket_rule(st, a, actor) {
@@ -1065,8 +1083,8 @@ function activitySummary(st, op, a, res) {
     case 'exit_basket': return { text: d.orders.length ? `Prepared exit of "${bn(a.basket_id)}": ${d.orders.length} sell orders` : `Exit of "${bn(a.basket_id)}": nothing to sell`, kind: d.orders.length ? 'needs_you' : 'change', orderIds: ids(d.orders) };
     case 'create_order': return { text: `Prepared ${d.orders.length} ${d.orders[0]?.side || ''} order${d.orders.length > 1 ? 's' : ''} for "${bn(d.orders[0]?.basketId)}" (about ${fmtINR(d.orders.reduce((t, o) => t + o.estValue, 0))})`, kind: 'needs_you', basketId: d.orders[0]?.basketId, orderIds: ids(d.orders) };
     case 'add_news_flag': return { text: `Flagged news on ${d.flag.name}: ${d.flag.metricLabel} likely ${d.flag.impact}${d.drafted_orders.length ? ' · sell prepared' : ''}`, kind: d.drafted_orders.length ? 'needs_you' : 'change', orderIds: ids(d.drafted_orders) };
-    case 'set_rule': return { text: `Changed "${d.rule.label}" limits in "${bn(a.basket_id)}"`, kind: 'change' };
-    case 'toggle_rule': return { text: `Turned "${d.rule.label}" ${d.rule.enabled ? 'on' : 'off'} in "${bn(a.basket_id)}"`, kind: 'change' };
+    case 'set_rule': return { text: `Changed "${d.rule.label}" limits in ${d.applied_to}`, kind: 'change' };
+    case 'toggle_rule': return { text: `Turned "${d.rule.label}" ${d.rule.enabled ? 'on' : 'off'} in ${d.applied_to}`, kind: 'change' };
     case 'set_basket_rule': return { text: `Changed basket limits of "${d.basket.name}"`, kind: 'change' };
     case 'add_candidate': return { text: `Added ${d.stock.name} (${d.stock.symbol}) to the stock list`, kind: 'change' };
     // ---- things only the person does in the website ----
@@ -1080,7 +1098,8 @@ function activitySummary(st, op, a, res) {
     case 'cancel_order': return { text: d.order.side === 'sell' && (d.order.source === 'rules' || d.order.tag === 'news_only' || d.order.tag === 'rules') ? `Kept ${d.order.name} anyway` : d.order.source === 'rules' ? `Skipped the suggested ${d.order.side} of ${d.order.name}` : `Cancelled the ${d.order.side} order for ${d.order.name}`, kind: 'change', basketId: d.order.basketId };
     case 'delete_basket': return { text: `Deleted basket "${d.name || a.name || 'basket'}"`, kind: 'change' };
     case 'duplicate_basket': return { text: `Copied a basket as "${d.basket.name}"`, kind: 'change', basketId: d.basket.id };
-    case 'reset_rules': return { text: `Reset the rules of "${bn(a.basket_id)}" to default`, kind: 'change' };
+    case 'reset_rules': return { text: d.scope === 'defaults' ? 'Reset the default rules to the original 13' : `Reset the rules of "${bn(a.basket_id)}" to default`, kind: 'change' };
+    case 'apply_default_rules': return { text: `Applied the default rules to ${d.baskets_updated} basket${d.baskets_updated === 1 ? '' : 's'}`, kind: 'change' };
     case 'delete_news_flag': return { text: 'Removed a news flag', kind: 'change' };
     case 'advance_day': case 'advance_quarter': {
       const f = new Set(d.filings.map(x => x.symbol)).size, c = d.changes.length; // a tick that changed nothing in the user's baskets is not news
@@ -1120,7 +1139,7 @@ export function dispatch(st, op, args = {}, actor = 'you') {
 // The activity log is "what happened": every Claude call (look-ups included, kind 'read') and the
 // person's own meaningful website actions (actor 'you'). Website reads, settings and failed taps are not logged.
 const USER_LOGGED = new Set(['create_basket', 'update_basket', 'duplicate_basket', 'delete_basket', 'exit_basket', 'add_stock', 'remove_stock', 'add_candidate',
-  'set_rule', 'toggle_rule', 'reset_rules', 'set_basket_rule', 'confirm_order', 'cancel_order', 'add_news_flag', 'delete_news_flag', 'advance_day', 'advance_quarter']);
+  'set_rule', 'toggle_rule', 'reset_rules', 'apply_default_rules', 'set_basket_rule', 'confirm_order', 'cancel_order', 'add_news_flag', 'delete_news_flag', 'advance_day', 'advance_quarter']);
 function logActivity(st, op, args, res, actor = 'claude') {
   st.activity ||= [];
   let sum;

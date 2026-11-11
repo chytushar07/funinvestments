@@ -363,3 +363,34 @@ test('activity text uses singular for one stock', () => {
   const a = ok(dispatch(st, 'get_activity', {}, 'you')).activity.find(x => /Created basket "Solo"/.test(x.text));
   assert.match(a.text, /with 1 stock(?!s)/);
 });
+
+test('rules can be edited per basket, as defaults, or everywhere (and with no baskets)', () => {
+  const st = createState();
+  // No baskets: toggling goes to the defaults instead of failing
+  let r = dispatch(st, 'toggle_rule', { rule_id: 'vol', enabled: false }, 'claude');
+  assert.equal(r.ok, true); assert.equal(r.data.scope, 'defaults'); assert.equal(st.rules.metrics.find(x => x.id === 'vol').enabled, false);
+  // Limits are Pro, with a helpful error
+  r = dispatch(st, 'set_rule', { rule_id: 'de', green: 0.5, red: 1 }, 'claude');
+  assert.equal(r.ok, false); assert.equal(r.error.code, 'pro_feature');
+  dispatch(st, 'set_plan', { plan: 'pro' }, 'you');
+  r = dispatch(st, 'set_rule', { rule_id: 'de', green: 0.4, red: 0.9 }, 'claude');
+  assert.equal(r.ok, true); assert.equal(st.rules.metrics.find(x => x.id === 'de').green, 0.4);
+  // New baskets start with the edited defaults
+  const b1 = dispatch(st, 'create_basket', { name: 'One', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'ONGC', 'GAIL', 'PETRONET'] }, 'you').data.basket;
+  const b2 = dispatch(st, 'create_basket', { name: 'Two', symbols: ['SRF', 'HAVELLS', 'BLUESTARCO', 'VOLTAS', 'KIRLPNU', 'NAVINFLUOR'] }, 'you').data.basket;
+  const rulesOf = id => st.baskets.find(b => b.id === id).rules;
+  assert.equal(rulesOf(b1.id).metrics.find(x => x.id === 'de').green, 0.4);
+  // One basket only
+  dispatch(st, 'set_rule', { basket_id: b1.id, rule_id: 'roe', green: 20, red: 12 }, 'you');
+  assert.equal(rulesOf(b1.id).metrics.find(x => x.id === 'roe').green, 20);
+  assert.notEqual(rulesOf(b2.id).metrics.find(x => x.id === 'roe').green, 20);
+  // Everywhere
+  r = dispatch(st, 'toggle_rule', { scope: 'all', rule_id: 'beta', enabled: false }, 'claude');
+  assert.equal(r.ok, true);
+  for (const rs of [st.rules, rulesOf(b1.id), rulesOf(b2.id)]) assert.equal(rs.metrics.find(x => x.id === 'beta').enabled, false);
+  // Copy defaults onto baskets, then reset defaults
+  dispatch(st, 'apply_default_rules', {}, 'you');
+  assert.notEqual(rulesOf(b1.id).metrics.find(x => x.id === 'roe').green, 20);
+  dispatch(st, 'reset_rules', { scope: 'defaults' }, 'you');
+  assert.equal(st.rules.metrics.find(x => x.id === 'vol').enabled, true);
+});
