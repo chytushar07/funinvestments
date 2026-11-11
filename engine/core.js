@@ -1232,9 +1232,6 @@ const OPS = {
   },
 };
 
-// What the user should do next, most urgent first: orders with a sell the rules or news asked for,
-// then other orders, urgent alerts that have no order to confirm, baskets short of stocks,
-// baskets not invested yet, and last the news flags that only wait for results.
 // Deleted notifications are kept (newest first) so the Notifications page can show what was cleared and what went with it.
 function archiveAlerts(st, alerts, actor, cancelled) {
   st.clearedAlerts ||= [];
@@ -1256,6 +1253,9 @@ function dropAlertActions(st, alerts, actor) {
   }
   return out;
 }
+// What the user should do next, most urgent first: orders with a sell the rules or news asked for,
+// then other orders, urgent alerts that have no order to confirm, baskets short of stocks,
+// baskets not invested yet, and last the news flags that only wait for results.
 function todoListRaw(st) {
   const out = [];
   const bname = id => st.baskets.find(b => b.id === id)?.name || 'a basket';

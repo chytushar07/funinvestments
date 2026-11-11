@@ -10,7 +10,8 @@
     "test": "node --test test/*.test.js",
     "build": "node scripts/build-static.js",
     "cf:dev": "wrangler dev",
-    "cf:deploy": "wrangler deploy"
+    "cf:deploy": "wrangler deploy",
+    "test:e2e": "node test/e2e/ui.mjs && node test/e2e/notifications.mjs && node test/e2e/mcp.mjs"
   },
   "engines": {
     "node": ">=18"
