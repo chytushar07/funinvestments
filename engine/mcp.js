@@ -6,7 +6,7 @@ export const INSTRUCTIONS = 'FunInvestments: a rules-based guardian for the user
   + 'Each website browser has its own private space, and this connector is linked to one of them. If get_activity shows no baskets but the user says they have some, they are looking at a different space: give them the "website" link from get_activity, which opens this connector\'s space, or tell them to copy the connector URL again from Settings → Connect Claude on the device that has their baskets. '
   + 'Rules (Pro): get_rules reads them; set_rule changes a rule\'s green/red limits, toggle_rule turns one on or off, set_rating_cutoffs changes when a stock is Buy / Hold / Sell (by number of warnings); scope "defaults", "basket" or "all". On Free these return pro_feature: say editing rules is a Pro feature and give the free_alternative.';
 
-export const SERVER_VERSION = '0.3.0';
+export const SERVER_VERSION = '0.3.1';
 // call(name, args) → { ok, data } | { ok: false, error }. opts.website: a link that opens this connector's space in a browser.
 export function mcpHandle(msg, call, opts = {}) {
   const { id, method, params } = msg || {};
