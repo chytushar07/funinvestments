@@ -623,7 +623,7 @@ export function PlansTable() {
     <tr><th>Feature</th><th class=${pro ? '' : 'cur'}>Free</th><th class=${pro ? 'cur' : ''}>Pro</th></tr>
     <tr class="pricerow"><td>Price</td>
       <td class=${pro ? '' : 'cur'}><div class="pfree"><b class="num">₹0</b><span class="faint">forever</span>
-        ${pro ? html`<button class="btn small ghost" onClick=${() => act('set_plan', { plan: 'free' }, { ok: 'Back on Free' })}>Switch</button>` : html`<span class="ok">Your plan ✓</span>`}</div></td>
+        ${pro ? null : html`<span class="ok">Your plan ✓</span>`}</div></td>
       <td class=${pro ? 'cur' : ''}><div class="pfree"><b class="num">${inrP(price)}</b><span class="faint">/ ${unit}${m > 1 ? ` · ${inrP(Math.round(price / m))} a month` : ''}</span>
         ${mine === per ? html`<span class="ok">Your plan ✓</span>` : html`<button class="btn small primary" onClick=${start}>${pro ? `Switch to ${label.toLowerCase()}` : 'Start Pro'}</button>`}</div></td></tr></thead>
     <tbody>${PLAN_ROWS.map(([f, a, b]) => html`<tr key=${f}><td>${f}</td><td class=${pro ? '' : 'cur'}>${cell(a)}</td><td class=${pro ? 'cur' : ''}>${cell(b)}</td></tr>`)}</tbody></table></div>
