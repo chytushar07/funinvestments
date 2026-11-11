@@ -11,5 +11,7 @@
   },
   "durable_objects": { "bindings": [{ "name": "STORE", "class_name": "Store" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Store"] }],
+  // Branch previews (non-production builds run `wrangler preview`) get their own isolated Durable Object.
+  "previews": { "durable_objects": { "bindings": [{ "name": "STORE", "class_name": "Store" }] } },
   "observability": { "enabled": true }
 }
