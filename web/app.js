@@ -33,7 +33,7 @@ const NAV = S => [
   ['baskets', 'Baskets', I.baskets, 0],
   ['orders', 'Orders', I.orders, S.pending],
   ['alerts', 'Alerts', I.bell, S.unread],
-  ['about', 'About', I.about, 0],
+  ['about', 'Explore app', I.compass, 0],
 ];
 
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -92,7 +92,7 @@ function App() {
   return html`<div class="shell">
     <nav class="rail" aria-label="Main">
       <button class="brand" onClick=${() => go('home')}><${Logo}/><div>FunInvestments<small>by Tushar</small></div></button>
-      ${nav.map(([r, l, ic, n]) => html`<button key=${r} data-tour=${'nav-' + r} class="navlink ${active === r ? 'on' : ''}" aria-current=${active === r ? 'page' : null} onClick=${() => go(r)}>${ic}${l}${n ? html`<span class="count">${n}</span>` : null}</button>`)}
+      ${nav.map(([r, l, ic, n]) => html`<button key=${r} data-tour=${'nav-' + r} class="navlink ${active === r ? 'on' : ''} ${r === 'about' ? 'explorebtn' : ''}" aria-current=${active === r ? 'page' : null} onClick=${() => go(r)}>${ic}${l}${n ? html`<span class="count">${n}</span>` : null}</button>`)}
       <div class="foot">
         <${PlanSwitch} rail/>
         <button class="navlink ${route === 'account' ? 'on' : ''}" onClick=${() => go('account')}>${I.user}Settings</button></div>
@@ -103,7 +103,7 @@ function App() {
       ${page}
       <p class="disclaimer">For learning only · Practice money, no real trades · Not investment advice · All prices and metrics are mock data</p>
     </div></main>
-    <nav class="bottomnav" aria-label="Main">${nav.map(([r, l, ic, n]) => html`<button key=${r} data-tour=${'nav-' + r} class=${active === r ? 'on' : ''} aria-current=${active === r ? 'page' : null} onClick=${() => go(r)}>${ic}${l}${n ? html`<span class="dot-badge">${n}</span>` : null}</button>`)}</nav>
+    <nav class="bottomnav" aria-label="Main">${nav.map(([r, l, ic, n]) => html`<button key=${r} data-tour=${'nav-' + r} class="${active === r ? 'on' : ''} ${r === 'about' ? 'explorebtn' : ''}" aria-current=${active === r ? 'page' : null} onClick=${() => go(r)}>${ic}${l}${n ? html`<span class="dot-badge">${n}</span>` : null}</button>`)}</nav>
     <${SheetHost}/>
     <${Tour}/>
     ${t && html`<div class="toast ${t.err ? 'err' : ''}" role="status" key=${t.at}><span>${t.text}</span>${t.action && html`<button onClick=${() => go(t.go)}>${t.action}</button>`}</div>`}

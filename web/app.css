@@ -498,3 +498,9 @@ a.btn.primary { color: var(--brand-ink); }
 .picksum { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); line-height: 1.4; }
 .picksum b { color: var(--fg); }
 .picksum .linkbtn { flex: none; font-size: 13px; padding: 0; }
+
+/* 'Explore app' tab: stands out so people open it */
+.bottomnav button.explorebtn, .navlink.explorebtn { color: var(--brand); }
+.bottomnav button.explorebtn svg { background: var(--brand-soft); border-radius: 999px; padding: 3px; width: 30px; height: 30px; box-shadow: 0 0 0 1px color-mix(in oklab, var(--brand) 45%, transparent); }
+.bottomnav button.explorebtn { font-size: 11px; white-space: nowrap; }
+.navlink.explorebtn { background: var(--brand-soft); }

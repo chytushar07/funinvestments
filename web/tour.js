@@ -20,7 +20,7 @@ export const STEPS = [
   { route: 'orders', sel: '[data-tour="nav-orders"]', t: 'Orders wait for you', b: 'Orders prepared by you, the rules or Claude wait here. Change a quantity, confirm, cancel, or keep a stock anyway with a reason.' },
   { route: 'alerts', sel: '[data-tour="nav-alerts"]', t: 'Alerts', b: 'You hear when a stock\'s status changes, new quarterly results arrive, or a basket needs a replacement. Tap "Why?" for the numbers behind it.' },
   { route: 'home', sel: '[data-tour="clock"]', t: 'Move time forward', b: 'This is a demo, so you move the date yourself. +1 day runs the daily rule checks. +1 quarter brings new quarterly results.' },
-  { route: 'about', sel: '[data-tour="nav-about"]', t: 'Come back anytime', b: 'About lists everything you can do, compares Free and Pro, and restarts this tour.' },
+  { route: 'about', sel: '[data-tour="nav-about"]', t: 'Come back anytime', b: 'Explore app lists everything you can do, compares Free and Pro, and restarts this tour.' },
 ];
 const val = v => (typeof v === 'function' ? v() : v);
 

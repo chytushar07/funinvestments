@@ -138,7 +138,7 @@ export function Home() {
   return html`<div>
     <${PlanSwitch} home/>
     <${NextStep}/>
-    ${!tourSeen() && html`<div class="card tour-invite"><div><b>New here?</b><div class="muted" style="font-size:13px">Take the 1-minute tour.</div></div><button class="btn small primary" onClick=${startTour}>Start tour</button></div>`}
+    ${!tourSeen() && S.baskets.length === 0 && !S.todo?.length && html`<div class="card tour-invite"><div><b>New here?</b><div class="muted" style="font-size:13px">Take the 1-minute tour.</div></div><button class="btn small primary" onClick=${startTour}>Start tour</button></div>`}
     <button class="searchbar" data-tour="search" onClick=${() => seeAll({ focus: true })}>${I.search}<span>Search ${U.length} stocks</span></button>
     ${models.length ? html`<section class="section">
       <div class="section-head"><div><h2>Your baskets</h2><div class="faint num" style="font-size:12.5px;margin-top:2px">Practice portfolio ${inr(total)} · cash ${inr(S.cash)}</div></div><button class="linkbtn" onClick=${() => go('baskets')}>See all</button></div>
@@ -670,7 +670,7 @@ export function About() {
   const rank = id => (first ? 0 : hot[id] ? 0 : ['watch', 'results', 'confirm', 'flag'].includes(id) ? 1 : 2);
   const stories = STORIES.map((s, i) => [s, i]).sort((a, b) => rank(a[0].id) - rank(b[0].id) || a[1] - b[1]).map(x => x[0]);
   return html`<div>
-    <div class="row between" style="margin-top:4px"><h1>About</h1>${!first && html`<button class="btn small ghost" onClick=${startTour}>Take tour</button>`}</div>
+    <div class="row between" style="margin-top:4px"><h1>Explore the app</h1>${!first && html`<button class="btn small ghost" onClick=${startTour}>Take tour</button>`}</div>
     ${first ? html`<p class="muted" style="margin:8px 0 0;line-height:1.5">Stick to your own investing rules. The app watches; you decide.</p>
       <section class="card startcard" aria-label="Start here"><span class="eyebrow">Start here</span>
         <div class="sc-text"><b>${seen ? 'Create your first basket' : 'New here? Take the tour'}</b><div class="muted">${seen ? 'Pick stocks yourself or ask Claude.' : 'A quick walk around the app.'}</div></div>
