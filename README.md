@@ -66,35 +66,33 @@ Destructive actions (delete basket, delete stock, clear alerts) and confirming o
 `+1d` / `+1q` in the top bar run the scheduler. `+1q` brings in mock October filings that confirm
 or clear news flags.
 
-## Host it (website + MCP in one service)
+## Host it free on Cloudflare (website + MCP)
 
-The server is one Node process with no dependencies: website, `/api` and the MCP endpoint.
+Cloudflare Workers runs the website and the MCP endpoint for free, without sleeping. Your baskets,
+orders and Claude's activity are saved in a Durable Object (Cloudflare's built-in storage), so nothing
+resets on restart. The free plan allows 100,000 requests a day, plenty for a prototype.
 
-**1. Put the code on GitHub**
-1. Sign in to github.com and create an empty repository called `funinvestments` (no README).
-2. In Claude: Settings → Connectors → GitHub → connect, and give it access to that repository.
-3. Ask Claude to push this project, or push it yourself:
-   `git init && git add . && git commit -m "FunInvestments" && git branch -M main && git remote add origin https://github.com/<you>/funinvestments.git && git push -u origin main`
+**1. Deploy from GitHub (one time, about 3 minutes)**
+1. Sign in at dash.cloudflare.com (free account).
+2. **Workers & Pages → Create → Import a repository** → connect GitHub → pick `funinvestments`.
+3. Leave the settings as they are (`wrangler.jsonc` sets everything) → **Deploy**.
+4. Open `https://funinvestments.<your-subdomain>.workers.dev`.
 
-**2. Deploy on Render (recommended)**
-1. render.com → New → **Blueprint** → pick the `funinvestments` repo. `render.yaml` sets everything up.
-2. It creates a web service with a 1 GB disk and a generated secret `FI_API_KEY`. The disk is what keeps your baskets, orders and Claude's activity when the service restarts (Starter plan; the free plan has no disk).
-3. When it's live, open `https://<your-service>.onrender.com` → **Settings → Connect Claude** → Test connection.
+Every push to `main` redeploys automatically.
 
-Other hosts (Railway, Fly.io, any Docker host) work too: build the `Dockerfile`, set `FI_API_KEY`, and mount a volume at `/data`.
+**2. Connect Claude**
+In the website: **Settings → Connect Claude**: copy the link → Open Claude → Add custom connector →
+paste → Test. Then start a chat: "What's pending in FunInvestments?"
 
-**3. Connect Claude**
-Settings → Connect Claude shows the connector URL (`https://<host>/mcp/<FI_API_KEY>`) and the steps.
-In Claude: Settings → Connectors → Add custom connector → name FunInvestments → paste the URL.
-Start a chat and ask "What's pending in FunInvestments?".
+**Secret key.** The connector link contains a key. If you don't set one, the app makes one on first
+start and saves it. To choose your own: Worker → Settings → Variables and Secrets → add secret
+`FI_API_KEY`.
 
-**Environment**
-| Variable | What |
-|---|---|
-| `PORT` | Set by the host |
-| `FI_API_KEY` | Secret key in the connector URL. Keep it long and private |
-| `DATA_DIR` | Folder for `state.json`. Must be a persistent disk, or data resets on restart |
-| `PUBLIC_URL` | Optional, only used to print the connector URL in logs |
+**From the command line instead:** `npm i -g wrangler && wrangler login && npm run cf:deploy`.
+Local test: `npx wrangler dev` (uses `wrangler.jsonc`).
+
+**Other hosts.** `npm start` runs the same app as a plain Node server (`server/server.js`); a
+`Dockerfile` and `render.yaml` are included. Set `FI_API_KEY`, and `DATA_DIR` on a persistent disk.
 
 **Nothing is lost between Claude chats.** Baskets, orders and every Claude action are saved on the
 server. The `get_activity` tool lets a new chat pick up where the last one stopped, and the website
@@ -102,4 +100,4 @@ shows Claude's activity and your next step on Home and in Activity.
 
 **Security (prototype):** the website has no login. Anyone with its address can use it and see the
 connector URL in Settings. Share the address only with people you trust, or add your host's password
-protection. One shared state for everyone (single-user prototype).
+protection (Cloudflare Access works). One shared state for everyone (single-user prototype).

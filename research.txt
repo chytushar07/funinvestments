@@ -1,0 +1,174 @@
+AC basket research: full summary
+
+All figures use prices to 9 November 2026. This is research, not investment advice.
+
+1. Goal
+Build a moderate-risk basket of Indian stocks across the air-conditioning value chain.
+Pick stocks with 13 fixed rules, then test whether those rules would have worked in the past.
+2. How companies were found
+Starting list: 28 AC-linked companies from the top 1,000 NSE stocks, sorted by stage: raw materials, parts and contract makers, brands, commercial cooling, retail.
+Backtest list: wider. I scanned the business descriptions of all 2,599 NSE companies for AC keywords.
+Added 5 smaller names: VOEPL, Stallion Fluorochemicals, Triton Valves, Cubex Tubings, Onida.
+Added 1 failed name: Fedders Electric (the old Lloyd Electric).
+Excluded as false keyword matches: air coolers, industrial air compressors, engine radiators, process heat exchangers, HVAC maintenance services and similar.
+3. The 13 decision metrics
+
+A red counts 2 points and an amber counts 1. The first five (marked ★) are critical: a single red on any of them means Remove.
+
+Metric	Green	Red
+★ Daily traded value	≥ ₹10 cr	< ₹2 cr
+★ Promoter pledge	≤ 10%	> 25%
+★ Debt / equity	≤ 0.5	> 1.0
+★ Interest cover	≥ 5×	< 2.5×
+★ Loss years (last 5)	0	2 or more
+Volatility (1 year)	≤ 35%	> 50%
+Beta (5 years)	≤ 1.2	> 1.5
+Worst fall (5 years)	≥ −45%	below −60%
+Cash conversion (5 years)	≥ 0.8×	< 0.5×
+ROE (5-year average)	≥ 15%	< 10%
+Margin swing	≤ 3 pts	> 6 pts
+P/E ÷ its 5-year median	≤ 1.3×	> 1.7×
+PEG	≤ 2	> 3.5
+4. How a stock is marked
+Remove if:
+AC is less than 20% of its business, or
+it has any critical red, or
+it has more than 8 points.
+Watch if:
+it has 4–8 points, or
+its price history is under 3 years, or
+3 or more of its numbers are missing.
+Pass if it has 3 points or fewer and none of the above applies.
+5. What we left out, and why
+
+Shown in the sheet for context, but not used to decide:
+
+Correlation with the Nifty and with the other AC stocks
+Sales, profit and EPS growth
+Stock returns (1, 3, 5 and 10 years)
+Promoter holding and forward P/E
+Exports: only KRN discloses it (16.6%)
+
+Left out of the backtests only:
+
+Promoter pledge: no history is available.
+“Use the more cautious of two sources”: only one source has 10 years of statements.
+
+Still to decide:
+
+Debt to equity and cash conversion before about FY2016 don’t exist in machine-readable form. This blocks a 15-year test with identical rules.
+
+Number checks
+
+14 key numbers per company were checked against a second source: 341 matched, 31 differed, 20 had one source only.
+Where the sources disagreed, the decision used the more cautious figure.
+6. Today’s result (28 companies)
+✅ Pass (6)
+Stock	Points	Flags
+SRF	1	Amber: PEG
+Havells (Lloyd)	2	Amber: worst fall, PEG
+Kirloskar Pneumatic	2	Amber: volatility, margin swing
+Blue Star	3	Red: PEG; amber: cash conversion
+Gujarat Fluorochemicals	3	Amber: ROE, margin swing, PEG
+Navin Fluorine	3	Amber: volatility, margin swing, PEG
+🟡 Watch (7)
+Stock	Points	Why
+LG Electronics India	0	All green, but listed only in October 2025
+KRN Heat Exchanger	4	Red: volatility, cash conversion; short history
+Aditya Vision	5	Red: cash conversion
+KSH International	5	Red: volatility, cash conversion; short history
+Subros	5	Red: ROE
+Voltas	5	Red: cash conversion, ROE
+Whirlpool	7	Red: worst fall, ROE, PEG
+❌ Remove: critical red (6)
+Ram Ratna: debt
+Hind Rectifiers: debt
+Precision Wires: debt (borrowings jumped to ₹1,475 crore in September 2026)
+Electronics Mart: debt, interest cover
+Amber: interest cover (also red on ROE, P/E vs past and PEG; 11 points)
+Bosch Home Comfort (Hitachi): pledge, interest cover, loss years
+❌ Remove: critical red and over 8 points (3)
+PG Electroplast: 10 points (red on cash conversion and P/E vs past; amber on interest cover and five others)
+EPACK: 12 points (red on interest cover, volatility, worst fall, ROE)
+Ice Make: 12 points (red on liquidity, debt, interest cover, P/E vs past)
+❌ Remove: AC under 20% of the business (6)
+Hindalco (5%), Chemplast (5%), Thermax (10%), Triveni Turbine (10%), Honeywell Automation (15%), IFB (15%)
+7. How the testing developed
+Test	Basket’s yearly return	Nifty	Problem fixed
+Today’s 6 picks over 10 years	27%	11%	None: hindsight inflates it
+Same rules each June from 2018	17.1%	10.7% (price index)	Hindsight removed
+Survivorship-free, real filing dates	19.1%	11.9% (TRI)	Failed companies, late filers and dividends included
+
+Final test, 30 June 2018 to 9 November 2026
+
+Basket	₹100 became	Yearly return	Worst fall
+Pass only	₹432	19.1%	−23%
+Pass + Watch	₹769	27.6%	−21%
+All liquid AC stocks	₹699	26.2%	−21%
+Nifty 50 TRI	₹256	11.9%	−29%
+
+Robustness: across 8 variants (1% yearly costs, deciding in July, August or September, stricter or looser points), the screen beat the Nifty every time. It trailed “all liquid AC stocks” in every variant except Pass + Watch.
+
+8. Each June: how many stocks, and what happened
+June	Universe	Pass	Watch	Remove (of which AC<20%)
+2018	25	5	2	18 (5)
+2019	25	4	3	18 (5)
+2020	24	4	4	16 (5)
+2021	25	3	5	17 (5)
+2022	26	3	6	17 (6)
+2023	27	4	7	16 (6)
+2024	28	3	10	15 (6)
+2025	30	4	12	14 (6)
+2026	32	7	7	18 (6)
+
+Average return per stock over the next 12 months
+
+“Removed” here covers only stocks removed on risk. The low-AC removals are left out because they’re excluded for relevance, not risk.
+
+June	Pass + Watch	Removed	Nifty TRI	Better
+2018	+26%	−29%	+11%	Kept ✅
+2019	+27%	−30%	−12%	Kept ✅
+2020	+68%	+179%	+55%	Removed ❌
+2021	+22%	+17%	+2%	Kept ✅
+2022	+6%	+98%	+23%	Removed ❌
+2023	+56%	+116%	+27%	Removed ❌
+2024	+21%	+11%	+8%	Kept ✅
+2025	+26%	+23%	−6%	Kept ✅
+2026*	−4%	+8%	+5%	Removed ❌
+
+*June to November 2026 only.
+
+Score: the kept stocks did better in 5 of 9 years. The removed stocks did better in 4, three of them full years.
+
+9. Did removed stocks outperform the next year?
+
+Yes, often. Removed stocks beating the Nifty over the next 12 months:
+
+June	Beat Nifty	Biggest winners
+2018	1 of 13	Kirloskar Pneumatic +13%
+2019	4 of 13	Bosch Home Comfort +30%, Cubex +9%
+2020	10 of 11	PG Electroplast +794%, Kirloskar Pneumatic +241%, Gujarat Fluorochemicals +190%
+2021	8 of 12	PG Electroplast +107%, Ram Ratna +44%
+2022	11 of 11	Ice Make +244%, Ram Ratna +231%, Precision Wires +120%
+2023	9 of 10	Aditya Vision +175%, Electronics Mart +174%, Cubex +166%
+2024	4 of 9	Hind Rectifiers +88%, Amber +51%
+2025	3 of 8	Onida +167%, Hind Rectifiers +78%
+2026*	5 of 12	Cubex +127%, Ram Ratna +29%
+
+The pattern behind it
+
+Most removed winners failed on low trading or deep past falls, meaning small, illiquid companies. They tend to surge in small-cap rallies (2020–2023).
+In bad years the screen protected you. In June 2018 and 2019, removed stocks averaged about −30%, and Fedders Electric was wiped out (−84%, then −100%).
+10. Key takeaways
+The screen beats the Nifty consistently, by about 7 points a year.
+It also misses the sector’s biggest winners, because those are small and risky when they start.
+Pass + Watch did best: 27.6% a year, with the smallest worst fall (−21%).
+Watch stocks beat Pass stocks in 7 of 9 years, but individual Watch stocks can still fall hard, for example Whirlpool −43% in 2025–26.
+The evidence is limited: 8.4 years and 3–19 stocks a year is a small sample.
+11. Still open
+
+The 15-year test (from 2012) with identical rules needs a decision:
+
+(a) Extract debt and cash flow from old annual-report PDFs. Exact, but slow.
+(b) Use 10 rules for all 15 years.
+(c) Start in June 2017 with all 12 rules.

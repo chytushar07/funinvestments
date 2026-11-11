@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createState, dispatch } from '../engine/core.js';
-import { mcpHandle } from './server.js';
+import { mcpHandle } from '../engine/mcp.js';
 
 const URL_ = process.env.FI_URL || 'http://localhost:8787';
 const KEY = process.env.FI_KEY || 'fi_demo_7f3a9c21';

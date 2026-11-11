@@ -8,7 +8,9 @@
     "start": "node server/server.js",
     "mcp": "node server/mcp-stdio.js",
     "test": "node --test test/*.test.js",
-    "build:artifact": "node server/build-artifact.js"
+    "build": "node scripts/build-static.js",
+    "cf:dev": "wrangler dev",
+    "cf:deploy": "wrangler deploy"
   },
   "engines": {
     "node": ">=18"
