@@ -47,6 +47,16 @@ function exitBasket(b) {
   });
 }
 
+
+// − / + with an editable number. Defined once at module level so its buttons are never rebuilt
+// between a finger going down and the tap landing (a redraw used to swallow taps).
+function NumStep({ id, v, set, step, clamp, label }) {
+  return html`<div class="numstep" role="group" aria-label=${label}>
+    <button type="button" aria-label=${`${label}: less`} onClick=${() => set(x => clamp(x - step))}>−</button>
+    <input id=${id} class="num" inputmode="decimal" value=${v} aria-label=${label} onChange=${e => { const n = parseFloat(e.target.value); if (!isNaN(n)) set(clamp(n)); else e.target.value = v; }}/>
+    <button type="button" aria-label=${`${label}: more`} onClick=${() => set(x => clamp(x + step))}>+</button></div>`;
+}
+
 const SHEETS = {
   info: InfoSheet,
   // ---------- create basket ----------
@@ -265,26 +275,20 @@ const SHEETS = {
     const band = up
       ? `linear-gradient(90deg, var(--down) 0 ${pr}%, #E7A93B ${pr}% ${pg}%, var(--up) ${pg}% 100%)`
       : `linear-gradient(90deg, var(--up) 0 ${pg}%, #E7A93B ${pg}% ${pr}%, var(--down) ${pr}% 100%)`;
-    const Num = ({ id, v, set, label }) => html`<div class="numstep" role="group" aria-label=${label}>
-      <button type="button" aria-label=${`${label}: less`} onClick=${() => set(clamp(v - step))}>−</button>
-      <input id=${id} class="num" inputmode="decimal" value=${v} aria-label=${label} onChange=${e => { const n = parseFloat(e.target.value); if (!isNaN(n)) set(clamp(n)); else e.target.value = v; }}/>
-      <button type="button" aria-label=${`${label}: more`} onClick=${() => set(clamp(v + step))}>+</button></div>`;
     return html`<div class="stack rulesheet" style="gap:14px"><div class="row between" style="gap:10px"><h2>${r.long}</h2>${r.critical && html`<span class="tag claude" style="flex:none">★ Must-pass</span>`}</div>
       <span class="muted" style="font-size:13px">${def ? 'Default rule: new baskets start with it, and it rates stocks on Home and Explore.' : `This basket only: ${b.name}.`} <${Info} k=${r.id}/></span>
       <div class="rband"><div class="rbar" style=${`background:${band}`}></div>
         <div class="rlegend"><span><i class="g"></i>Good ${goodTxt}</span><span><i class="r"></i>Bad ${badTxt}</span></div></div>
       ${pro ? html`
-        <div class="rrow"><div><b>Good (green)</b><span class="muted">${up ? 'at or above' : 'at or below'}</span></div><${Num} id="rs-g" v=${g} set=${setG} label="Good limit"/></div>
-        <div class="rrow"><div><b>Bad (red)</b><span class="muted">${up ? 'below' : 'above'}</span></div><${Num} id="rs-r" v=${rd} set=${setRd} label="Bad limit"/></div>
+        <div class="rrow"><div><b>Good (green)</b><span class="muted">${up ? 'at or above' : 'at or below'}</span></div><${NumStep} id="rs-g" v=${g} set=${setG} step=${step} clamp=${clamp} label="Good limit"/></div>
+        <div class="rrow"><div><b>Bad (red)</b><span class="muted">${up ? 'below' : 'above'}</span></div><${NumStep} id="rs-r" v=${rd} set=${setRd} step=${step} clamp=${clamp} label="Bad limit"/></div>
         <div class="chips"><button class="chip" onClick=${() => shift(1)}>Stricter</button><button class="chip" onClick=${() => shift(-1)}>Looser</button>${changed && html`<button class="chip" onClick=${() => { setG(r.green); setRd(r.red); }}>Undo</button>`}</div>
         ${!valid && html`<span class="down" style="font-size:13px">Good can't be ${up ? 'below' : 'above'} bad.</span>`}
         ${!def && wi && valid ? html`<div class="card stack" style="gap:6px"><b>What changes</b><span class="muted" style="font-size:13px">${wi.changes.length ? wi.changes.slice(0, 6).map(c => `${shortName(c.name)} ${STATUS[c.from][1]} → ${STATUS[c.to][1]}${c.inBasket ? ' (in basket)' : ''}`).join(' · ') : 'No rating changes today'}</span>
           <span class="faint" style="font-size:12px">Past test, good exit calls: ${wi.backtest.before.removalsRight} of ${wi.backtest.before.removalsTotal} → ${wi.backtest.after.removalsRight} of ${wi.backtest.after.removalsTotal}</span></div>` : null}
         ${def && store.S.baskets.length > 0 && html`<label class="row" style="gap:10px;font-size:13.5px;cursor:pointer"><input type="checkbox" checked=${all} onChange=${e => setAll(e.target.checked)}/> Also apply to all ${store.S.baskets.length} of my baskets</label>`}
         <div class="sticky-cta"><button class="btn primary block" disabled=${!valid || !changed} onClick=${async () => { const args = def ? { scope: all ? 'all' : 'defaults', rule_id: r.id, green: g, red: rd } : { basket_id: b.id, rule_id: r.id, green: g, red: rd }; const x = await act('set_rule', args, { quiet: true }); if (x?.ok) { closeSheet(); await refresh(); toast(def ? `Saved to ${x.data.applied_to}` : `Saved · ${x.data.changed.length} rating change${x.data.changed.length === 1 ? '' : 's'}`); } }}>${changed ? 'Save' : 'Change a limit to save'}</button></div>`
-      : html`<div class="card lockcard"><b>🔒 Rules are read-only on Free</b>
-          <span class="muted">On Free every basket uses the 13 default rules, read-only. Pro lets you switch rules on or off, set your own limits, and lets Claude change them for you.</span>
-          <div class="row" style="gap:8px;margin-top:4px"><button class="btn small primary" onClick=${() => go('home')}>Try Pro (demo)</button><button class="btn small ghost" onClick=${() => go('pricing')}>See plans</button></div></div>`}
+      : html`<div class="row between proline"><span>🔒 Editing rules is a Pro feature</span><button class="linkbtn" onClick=${() => go('pricing')}>See plans</button></div>`}
     </div>`;
   },
 

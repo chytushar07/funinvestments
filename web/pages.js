@@ -2,7 +2,7 @@
 import { html, useState, useEffect, useRef } from './vendor/preact-htm.js';
 import { store, act, read, go, openSheet, copy, toast, confirmDialog } from './store.js';
 import * as api from './client.js';
-import { inr, inr2, pct, cls, short, dateLabel, shortName, STATUS, Pill, Src, Avatar, Mock, Chg, I, Sparkline, Stepper, Switch, Empty } from './lib.js';
+import { inr, inr2, pct, cls, short, dateLabel, shortName, STATUS, Pill, Src, Avatar, Mock, Chg, I, Sparkline, Stepper, Switch, ProLock, Empty } from './lib.js';
 import { Info } from './glossary.js';
 import { exitBasket } from './sheets.js';
 import { startTour, tourSeen } from './tour.js';
@@ -375,7 +375,8 @@ function BasketStocks({ b }) {
 }
 
 
-// Free: rules are read-only. One clear card instead of controls that silently do nothing.
+const lockTap = () => toast('Editing rules is a Pro feature', { action: 'See plans', go: 'pricing' });
+// (old big lock card kept for reference, no longer shown)
 function RulesLock() {
   return html`<div class="card lockcard"><b>🔒 Rules are read-only on Free</b>
     <span class="muted">Every basket uses the 13 default rules. Pro lets you switch rules on or off, set your own limits, and lets Claude edit them for you.</span>
@@ -391,7 +392,7 @@ function BasketRules({ b }) {
   const steps = [['minStocks', 'min_stocks', 'Fewest stocks', 1, 1, 12, ''], ['maxStocks', 'max_stocks', 'Most stocks', 1, 1, 12, ''], ['maxStockWeight', 'max_stock_weight', 'Max in one stock', 5, 5, 100, '%'], ['maxStageWeight', 'max_stage_weight', 'Max in one segment', 5, 5, 100, '%'], ['maxWatchWeight', 'max_watch_weight', 'Max in a Hold stock', 5, 5, 100, '%'], ['driftTrigger', 'drift_trigger', 'Rebalance when off by', 1, 1, 30, ' pts'], ['minTheme', 'min_theme', 'Min theme share', 5, 0, 100, '%']];
   const dirty = lim && Object.keys(L).some(k => lim[k] !== L[k]);
   return html`<div class="stack" style="margin-top:14px">
-    ${pro ? html`<div class="card rulehelp"><b>Edit this basket's rules</b><span class="muted">Tap a rule to change its limits · use the switch to turn it off · basket limits are at the bottom. Changes apply to this basket only, and Claude can make them too. <button class="linkbtn" style="font-size:13px;padding:0" onClick=${() => go('rules')}>Default rules for new baskets →</button></span></div>` : html`<${RulesLock}/>`}
+    ${pro ? html`<div class="card rulehelp"><b>Edit this basket's rules</b><span class="muted">Tap a rule to change its limits · use the switch to turn it off · basket limits are at the bottom. Changes apply to this basket only, and Claude can make them too. <button class="linkbtn" style="font-size:13px;padding:0" onClick=${() => go('rules')}>Default rules for new baskets →</button></span></div>` : html`<div class="row between proline"><span>🔒 Rules are read-only on Free · every basket uses the 13 defaults</span><button class="linkbtn" onClick=${goPlans}>Pro ›</button></div>`}
     <div class="row between"><span class="eyebrow">13 safety rules · this basket only <${Info} k="warnings"/></span>${pro ? html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Reset rules to default?', body: 'Thresholds, switches and limits go back to the defaults for this basket.', confirm: 'Reset', onConfirm: () => act('reset_rules', { basket_id: b.id }, { ok: 'Rules reset' }) })}>Reset</button>` : html`<button class="linkbtn" onClick=${() => go('pricing')}>Edit with Pro</button>`}</div>
     <div class="card list" style="padding:2px 16px">${b.rules.metrics.map(r => {
       const red = b.stocks.filter(s => s.reds.includes(r.id)).length, amber = b.stocks.filter(s => s.ambers.includes(r.id)).length;
@@ -403,7 +404,7 @@ function BasketRules({ b }) {
           <span class="grow" style="min-width:0"><span class="t">${r.label}${r.critical ? html` <span class="star" title="Must-pass rule">★</span>` : ''}</span>
           <span class="s"><span class="num">good ${thr.replace(' · ', ' · bad ')}${r.unit === '%' ? '%' : r.unit === '×' ? '×' : ''}</span>${red || amber ? ` · ${[red && `${red} red`, amber && `${amber} amber`].filter(Boolean).join(', ')}` : ''}${r.source === 'claude' ? ' · By Claude' : r.source === 'you' ? ' · By you' : ''}</span></span></button>
         <${Info} k=${r.id}/>
-        <${Switch} id=${`rt-${b.id}-${r.id}`} checked=${r.enabled} disabled=${!pro} label="${r.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: r.id, enabled: v }, { ok: v ? `${r.label} on` : `${r.label} off` })}/></div>`;
+        ${pro ? html`<${Switch} id=${`rt-${b.id}-${r.id}`} checked=${r.enabled} label="${r.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: r.id, enabled: v }, { ok: v ? `${r.label} on` : `${r.label} off` })}/>` : html`<${ProLock} label=${r.label} onTap=${lockTap}/>`}</div>`;
     })}</div>
     <div class="faint" style="font-size:12px">★ Must-pass: one red means Sell <${Info} k="mustpass"/></div>
     ${b.kind === 'model' && html`<div class="row between" style="margin-top:8px"><span class="eyebrow">Basket limits <${Info} k="limits"/></span>${pro ? null : html`<span class="lock">Pro</span>`}</div>
@@ -412,7 +413,7 @@ function BasketRules({ b }) {
       ${dirty && html`<div class="row" style="gap:8px"><button class="btn primary" style="flex:1" onClick=${async () => { const args = { basket_id: b.id }; for (const [k, a] of steps) args[a] = lim[k]; const r = await act('set_basket_rule', args, { ok: 'Limits saved' }); if (r?.ok) setLim(null); }}>Save limits</button><button class="btn ghost" onClick=${() => setLim(null)}>Undo</button></div>`}`}
     <div class="row between" style="margin-top:8px"><span class="eyebrow">Company events</span>${pro ? null : html`<span class="lock">Pro</span>`}</div>
     <div class="card list" style="padding:2px 16px">${b.rules.events.map(e => html`<div class="li" key=${e.id}><span class="grow"><span class="t">${e.label}${e.critical ? html` <span class="star">★</span>` : ''}</span></span><${Info} k=${e.id}/>
-      <${Switch} id=${`ev-${b.id}-${e.id}`} checked=${e.enabled} disabled=${!pro} label="${e.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: e.id, enabled: v }, { ok: v ? 'On' : 'Off' })}/></div>`)}</div>
+      ${pro ? html`<${Switch} id=${`ev-${b.id}-${e.id}`} checked=${e.enabled} label="${e.label} on" onChange=${v => act('toggle_rule', { basket_id: b.id, rule_id: e.id, enabled: v }, { ok: v ? 'On' : 'Off' })}/>` : html`<${ProLock} label=${e.label} onTap=${lockTap}/>`}</div>`)}</div>
   </div>`;
 }
 
@@ -545,7 +546,7 @@ export function DefaultRules() {
   return html`<div>
     <div class="row" style="margin-top:4px"><button class="iconbtn" onClick=${() => history.back()} aria-label="Back">${I.back}</button><h1>Default rules</h1></div>
     ${pro ? html`<div class="card rulehelp" style="margin-top:12px"><b>Your rules for every new basket</b>
-      <span class="muted">These 13 checks rate every stock on Home and Explore, and each new basket starts with them. A basket can then have its own: open it and tap <b>⚙ Edit rules</b>. Tap a rule to change its limits; the switch turns it off.</span></div>` : html`<div style="margin-top:12px"><${RulesLock}/></div>`}
+      <span class="muted">These 13 checks rate every stock on Home and Explore, and each new basket starts with them. A basket can then have its own: open it and tap <b>⚙ Edit rules</b>. Tap a rule to change its limits; the switch turns it off.</span></div>` : html`<div class="row between proline" style="margin-top:12px"><span>🔒 Read-only on Free · these 13 rules apply to every basket</span><button class="linkbtn" onClick=${goPlans}>Pro ›</button></div>`}
     <section class="section"><div class="section-head"><span class="eyebrow">13 safety rules · defaults <${Info} k="warnings"/></span>
       ${pro && html`<button class="linkbtn" onClick=${() => confirmDialog({ title: 'Reset default rules?', body: 'The 13 rules go back to the original limits and switches. Your baskets keep their own rules.', confirm: 'Reset', onConfirm: () => act('reset_rules', { scope: 'defaults' }, { ok: 'Default rules reset' }) })}>Reset</button>`}</div>
       <div class="card list" style="padding:2px 16px">${R.metrics.map(r => html`<div class="li" key=${r.id}>
@@ -553,7 +554,7 @@ export function DefaultRules() {
           <span class="dot ${r.enabled ? 'green' : 'off'}"></span>
           <span class="grow" style="min-width:0"><span class="t">${r.label}${r.critical ? html` <span class="star" title="Must-pass rule">★</span>` : ''}</span><span class="s"><span class="num">${thr(r)}</span>${r.source === 'claude' ? ' · By Claude' : r.source === 'you' ? ' · Edited' : ''}</span></span></button>
         <${Info} k=${r.id}/>
-        <${Switch} id=${`dr-${r.id}`} checked=${r.enabled} disabled=${!pro} label="${r.label} on" onChange=${v => act('toggle_rule', { scope: 'defaults', rule_id: r.id, enabled: v }, { ok: v ? `${r.label} on by default` : `${r.label} off by default` })}/></div>`)}</div>
+        ${pro ? html`<${Switch} id=${`dr-${r.id}`} checked=${r.enabled} label="${r.label} on" onChange=${v => act('toggle_rule', { scope: 'defaults', rule_id: r.id, enabled: v }, { ok: v ? `${r.label} on by default` : `${r.label} off by default` })}/>` : html`<${ProLock} label=${r.label} onTap=${lockTap}/>`}</div>`)}</div>
       <div class="faint" style="font-size:12px;margin-top:6px">★ Must-pass: one red means Sell <${Info} k="mustpass"/></div></section>
     ${pro && html`<section class="section"><div class="card stack" style="gap:10px"><b>Use these on your baskets too</b>
       <span class="muted" style="font-size:13px">${n ? `Copy these rules onto all ${n} basket${n === 1 ? '' : 's'}. Each basket's stock and weight limits stay as they are.` : 'You have no baskets yet. New ones will start with these rules.'}</span>

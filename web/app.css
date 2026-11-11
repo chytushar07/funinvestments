@@ -470,3 +470,8 @@ a.btn.primary { color: var(--brand-ink); }
 .pc-sub { font-size: 11.5px; min-height: 28px; line-height: 1.25; }
 .pricecard .btn { margin-top: auto; }
 @media (max-width: 380px) { .pricecards { grid-template-columns: 1fr; } .pc-sub { min-height: 0; } }
+
+/* Free plan: small lock where a rule switch would be, and a one-line note */
+.prolock { flex: none; width: 46px; height: 28px; border-radius: 999px; border: 1px solid var(--line); background: var(--card-2); font-size: 13px; display: grid; place-items: center; }
+.proline { gap: 10px; font-size: 12.5px; color: var(--muted); padding: 2px 2px; }
+.proline .linkbtn { font-size: 12.5px; padding: 0; flex: none; }

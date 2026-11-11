@@ -1,5 +1,5 @@
 // Shared helpers and small components.
-import { html } from './vendor/preact-htm.js';
+import { html, useState, useEffect } from './vendor/preact-htm.js';
 
 export const inr = v => (v == null ? '—' : '₹' + Math.round(v).toLocaleString('en-IN'));
 export const inr2 = v => (v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -51,8 +51,17 @@ export function Stepper({ value, onChange, min = 0, max = 9999, step = 1, unit =
     <button type="button" aria-label="More" disabled=${value >= max} onClick=${() => onChange(Math.min(max, value + step))}>+</button></span>`;
 }
 
+// Switch shows the new position the moment it is tapped and keeps it while the change is saved.
+// (A redraw before the server answered used to flip it back for a moment, like a refresh.)
 export function Switch({ id, checked, onChange, label, disabled }) {
-  return html`<label class="switch"><input type="checkbox" id=${id} checked=${checked} disabled=${disabled} aria-label=${label} onChange=${e => onChange(e.target.checked)}/><span></span></label>`;
+  const [on, setOn] = useState(checked);
+  useEffect(() => { setOn(checked); }, [checked]);
+  return html`<label class="switch"><input type="checkbox" id=${id} checked=${on} disabled=${disabled} aria-label=${label} onChange=${e => { setOn(e.target.checked); onChange(e.target.checked); }}/><span></span></label>`;
+}
+
+// Free plan: a small lock where a rule's switch would be.
+export function ProLock({ label, onTap }) {
+  return html`<button type="button" class="prolock" aria-label=${`${label}: Pro feature`} title="Editing rules is a Pro feature" onClick=${onTap}>🔒</button>`;
 }
 
 export function Empty({ title, children }) {
