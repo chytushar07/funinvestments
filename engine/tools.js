@@ -63,6 +63,8 @@ export const TOOLS = [
     inputSchema: { type: 'object', required: ['symbol', 'metric', 'impact'], properties: { symbol: sym, metric: { type: 'string', enum: [...METRICS, ...EVENTS] }, impact: { type: 'string', enum: ['worse', 'better'] }, note: { type: 'string', description: 'One line: what the news says' }, url: { type: 'string' } } } },
   { name: 'get_rule_scorecard', group: 'News', description: 'How a basket\'s rules did every June 2018–2025 (mock backtest) plus live decisions. Free: latest year only.',
     inputSchema: { type: 'object', properties: { basket_id: basketId, view: { type: 'string', enum: ['summary', 'log'] } } } },
+  { name: 'get_upgrade_link', group: 'Plan', description: 'When the user wants Pro (or asks to upgrade): returns the Pro prices and a link that opens Plans and prices in their space with the chosen billing already selected. You cannot upgrade the user or take payment yourself; give them the link and the price, and they tap Start Pro.',
+    inputSchema: { type: 'object', properties: { billing: { type: 'string', enum: ['monthly', 'quarterly', 'yearly'], description: 'Default yearly' } } } },
 ];
 
 // Website path for each tool (parity map).
@@ -90,4 +92,5 @@ export const PARITY = {
   get_refill_plan: 'Alert → Review',
   add_news_flag: 'Stock → Flag news',
   get_rule_scorecard: 'Basket → Scorecard',
+  get_upgrade_link: 'Explore app → Plans and prices',
 };

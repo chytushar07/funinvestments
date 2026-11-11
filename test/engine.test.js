@@ -226,6 +226,7 @@ test('parity: every MCP tool gives the same result as the website door', () => {
     c('get_rule_scorecard', { basket_id: b.id });
     c('exit_basket', { basket_id: b.id });
     c('request_delete_basket', { basket_id: b.id, reason: 'x' });
+    c('get_upgrade_link', { billing: 'monthly' });
     c('get_activity', {});
     return out;
   };
@@ -664,4 +665,34 @@ test('pending: a waiting delete request hides invest / add-stock reminders for t
   assert.deepEqual(todo().map(t => t.kind), ['delete']);
   ok(dispatch(st, 'keep_basket', { basket_id: b.id }, 'you'));
   assert.ok(todo().some(t => t.kind === 'invest'));
+});
+
+test('a basket out of balance has one plain alert with a Rebalance action, not one a month', () => {
+  const st = createState();
+  dispatch(st, 'set_plan', { plan: 'pro' }, 'you');
+  const b = dispatch(st, 'create_basket', { name: 'Drifty', symbols: AC }, 'you').data.basket;
+  dispatch(st, 'set_basket_rule', { basket_id: b.id, drift_trigger: 1 }, 'you');
+  const o = dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 100000 }, 'you').data.orders;
+  dispatch(st, 'confirm_order', { order_ids: o.map(x => x.id) }, 'you');
+  for (let i = 0; i < 4; i++) dispatch(st, 'advance_quarter', {}, 'you');
+  const drift = st.alerts.filter(a => a.type === 'drift' && a.basketId === b.id);
+  assert.ok(drift.length <= 1, `got ${drift.length} drift alerts`);
+  if (drift.length) {
+    assert.match(drift[0].text, /planned \d+%\)\. Rebalance/);
+    assert.doesNotMatch(drift[0].text, /points off/);
+    assert.equal(drift[0].action.kind, 'rebalance');
+  }
+});
+
+test('Claude can hand the user an upgrade link but never upgrade them', async () => {
+  const { mcpHandle } = await import('../engine/mcp.js');
+  const st = createState();
+  const call = (name, args) => dispatch(st, name, args, 'claude');
+  const r = mcpHandle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_upgrade_link', arguments: { billing: 'monthly' } } }, call, { website: 'https://x.dev/#key=k1' });
+  assert.equal(r.result.structuredContent.url, 'https://x.dev/#key=k1&go=pricing&billing=monthly');
+  assert.equal(r.result.structuredContent.price, 499);
+  assert.equal(st.plan, 'free');
+  const e = mcpHandle({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'set_rating_cutoffs', arguments: { scope: 'defaults', buy_below: 3 } } }, call, { website: 'https://x.dev/#key=k1' });
+  assert.equal(e.result.isError, true);
+  assert.match(e.result.structuredContent.error.upgrade_url, /go=pricing/);
 });

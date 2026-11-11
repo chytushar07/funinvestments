@@ -612,7 +612,7 @@ export function PlansTable() {
   const PR = S.prices || { monthly: 499, quarterly: 1349, yearly: 4499 };
   const OPT = { monthly: ['Monthly', PR.monthly, 'month', 1], quarterly: ['Quarterly', PR.quarterly, 'quarter', 3], yearly: ['Yearly', PR.yearly, 'year', 12] };
   const mine = pro ? (S.billing || 'yearly') : null;
-  const [per, setPer] = useState(mine || 'yearly');
+  const [per, setPer] = useState(() => { let b = null; try { b = sessionStorage.getItem('fi_billing'); } catch { /* ignore */ } return (!pro && b) || mine || 'yearly'; });
   const [label, price, unit, m] = OPT[per];
   const save = PR.monthly * m - price;
   const start = () => act('set_plan', { plan: 'pro', billing: per }, { ok: `Pro is on (${label.toLowerCase()}) · demo, no payment` });

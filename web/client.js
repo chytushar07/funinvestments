@@ -13,7 +13,11 @@ const authHeaders = () => (spaceKey ? { 'x-api-key': spaceKey } : {});
 function keyFromLink() {
   const m = location.hash.match(/[#&]key=([\w-]+)/);
   if (!m) return '';
-  try { history.replaceState(null, '', location.pathname + location.search); } catch { /* ignore */ }
+  // A link from Claude can also say where to land, e.g. #key=…&go=pricing&billing=monthly
+  const to = (location.hash.match(/[#&]go=([\w-]+)/) || [])[1], bill = (location.hash.match(/[#&]billing=(monthly|quarterly|yearly)/) || [])[1];
+  if (bill) { try { sessionStorage.setItem('fi_billing', bill); } catch { /* ignore */ } }
+  try { history.replaceState(null, '', location.pathname + location.search + (to ? '#' + to : '')); } catch { /* ignore */ }
+  if (to) setTimeout(() => window.dispatchEvent(new HashChangeEvent('hashchange')), 300); // the router already read the old hash
   return m[1];
 }
 

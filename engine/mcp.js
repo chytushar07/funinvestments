@@ -4,9 +4,9 @@ import { TOOLS } from './tools.js';
 export const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 export const INSTRUCTIONS = 'FunInvestments: a rules-based guardian for the user\'s own stock baskets. Practice money only, mock data. At the start of every conversation call get_activity to see what was done before, which baskets exist and what the user still needs to do. You can prepare orders (and cancel ones still waiting with cancel_order); the user confirms them in the FunInvestments website. You cannot delete a basket: when the user asks, call request_delete_basket and tell them to confirm it in the website. Right after buying, a small loss is the 0.1% trading cost, not a price move (see costs and pnlNote in get_basket_status). Explain things in plain words. Stock ratings: pass is shown as Buy, watch as Hold, remove as Sell. They are what the user\'s own rules say, not advice, so use those words. '
   + 'Each website browser has its own private space, and this connector is linked to one of them. If get_activity shows no baskets but the user says they have some, they are looking at a different space: give them the "website" link from get_activity, which opens this connector\'s space, or tell them to copy the connector URL again from Settings → Connect Claude on the device that has their baskets. '
-  + 'Rules (Pro): get_rules reads them; set_rule changes a rule\'s green/red limits, toggle_rule turns one on or off, set_rating_cutoffs changes when a stock is Buy / Hold / Sell (by number of warnings); scope "defaults", "basket" or "all". On Free these return pro_feature: say editing rules is a Pro feature and give the free_alternative.';
+  + 'Upgrading: you cannot upgrade the user or take payment; when they want Pro call get_upgrade_link and give them its url and price. Rules (Pro): get_rules reads them; set_rule changes a rule\'s green/red limits, toggle_rule turns one on or off, set_rating_cutoffs changes when a stock is Buy / Hold / Sell (by number of warnings); scope "defaults", "basket" or "all". On Free these return pro_feature: say editing rules is a Pro feature and give the free_alternative.';
 
-export const SERVER_VERSION = '0.3.1';
+export const SERVER_VERSION = '0.3.2';
 // call(name, args) → { ok, data } | { ok: false, error }. opts.website: a link that opens this connector's space in a browser.
 export function mcpHandle(msg, call, opts = {}) {
   const { id, method, params } = msg || {};
@@ -25,6 +25,9 @@ export function mcpHandle(msg, call, opts = {}) {
     const res = call(name, params.arguments || {});
     // Claude can always hand the user the link to the space it is working in.
     if (opts.website && res.ok && (name === 'get_activity' || name === 'get_basket_status') && res.data && typeof res.data === 'object') res.data = { ...res.data, website: opts.website, website_note: 'This link opens the same space Claude works in. Each browser has its own space unless opened with this link.' };
+    // Upgrading is the user's tap: Claude gets a link that opens Plans and prices in this space.
+    if (opts.website && name === 'get_upgrade_link' && res.ok) res.data = { ...res.data, url: `${opts.website}&go=pricing&billing=${res.data.billing}` };
+    if (opts.website && !res.ok && res.error?.code === 'pro_feature') res.error = { ...res.error, upgrade_url: `${opts.website}&go=pricing&billing=yearly`, upgrade_note: 'Give the user this link to see Pro and upgrade themselves.' };
     return reply({ content: [{ type: 'text', text: JSON.stringify(res.ok ? res.data : res.error, null, 1) }], structuredContent: res.ok ? res.data : { error: res.error }, isError: !res.ok });
   }
   if (method === 'resources/list') return reply({ resources: [] });

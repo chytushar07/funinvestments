@@ -298,9 +298,20 @@ export function checkBasket(st, b, kind) {
   if (b.kind === 'model' && invested(b)) {
     const d = rebalanceTrades(st, b);
     const busy = st.orders.some(o => o.basketId === b.id && o.status === 'pending');
-    if (!busy && d.needed && (!b.lastDrift || daysBetween(b.lastDrift, st.clock) >= 28)) {
+    // One balance alert per basket, kept up to date (never a new one every month), gone once the basket is back in balance.
+    const old = st.alerts.filter(x => x.basketId === b.id && x.type === 'drift');
+    if (!d.needed || busy) { if (old.length) st.alerts = st.alerts.filter(x => !(x.basketId === b.id && x.type === 'drift')); }
+    else if ((!b.lastDrift || daysBetween(b.lastDrift, st.clock) >= 28 || old.length)) {
       b.lastDrift = st.clock;
-      addAlert(st, { basketId: b.id, type: 'drift', text: `${b.name} is ${d.max.toFixed(1)} points off its target mix · rebalance`, why: d.rows.filter(r => Math.abs(r.diff) > 1).map(r => `${r.name}: ${r.actual}% of the basket (target ${r.target}%)`), action: { kind: 'rebalance', basketId: b.id } });
+      const top = [...d.rows].sort((x, y) => Math.abs(y.diff) - Math.abs(x.diff))[0];
+      const text = top ? `${top.name} is now ${Math.round(top.actual)}% of ${b.name} (planned ${Math.round(top.target)}%). Rebalance to even it out.` : `${b.name} has drifted from its plan. Rebalance to even it out.`;
+      const why = ['Prices moved, so some stocks now take a bigger or smaller share of the basket than you planned.', ...d.rows.filter(r => Math.abs(r.diff) > 1).map(r => `${r.name}: ${Math.round(r.actual)}% now, planned ${Math.round(r.target)}%`)];
+      const keep = old[0];
+      if (keep && keep.text === text) { /* nothing new to say */ }
+      else {
+        st.alerts = st.alerts.filter(x => !(x.basketId === b.id && x.type === 'drift'));
+        addAlert(st, { basketId: b.id, type: 'drift', text, why, action: { kind: 'rebalance', basketId: b.id } });
+      }
     }
   }
   ensureRefill(st, b);
@@ -660,6 +671,12 @@ const OPS = {
   },
 
   // Claude (or anyone) can ask for a basket to be deleted; the person confirms or keeps it in the website.
+  get_upgrade_link(st, a) {
+    const billing = ['monthly', 'quarterly', 'yearly'].includes(a.billing) ? a.billing : 'yearly';
+    const per = { monthly: 'month', quarterly: 'quarter', yearly: 'year' }[billing];
+    return { plan: st.plan, billing, price: PRICES[billing], priceText: `${fmtINR(PRICES[billing])} a ${per}`, prices: { ...PRICES },
+      note: st.plan === 'pro' ? 'The user is already on Pro.' : `Give the user the link. They tap Start Pro there; you cannot upgrade them or take payment. Pro is ${fmtINR(PRICES.monthly)}/month, ${fmtINR(PRICES.quarterly)}/quarter or ${fmtINR(PRICES.yearly)}/year.` };
+  },
   request_delete_basket(st, a, actor) {
     const b = getBasket(st, a.basket_id);
     b.deleteRequest = { by: actor, at: st.clock, reason: String(a.reason || '').slice(0, 200) };
@@ -1285,7 +1302,7 @@ function todoList(st) {
   return todoListRaw(st).filter(t => t.kind === 'orders' || t.kind === 'delete' || !hidden.has(t.key));
 }
 
-const READ_LABEL = { get_universe: 'Looked through the stock list', get_basket_status: 'Checked basket status', get_alerts: 'Read your alerts', get_refill_plan: 'Checked replacement options', get_rule_scorecard: 'Read the past test', get_activity: 'Caught up on recent activity', get_rules: 'Read your rules', get_orders: 'Checked orders', get_state: 'Checked the app' };
+const READ_LABEL = { get_universe: 'Looked through the stock list', get_basket_status: 'Checked basket status', get_alerts: 'Read your alerts', get_refill_plan: 'Checked replacement options', get_rule_scorecard: 'Read the past test', get_activity: 'Caught up on recent activity', get_rules: 'Read your rules', get_orders: 'Checked orders', get_state: 'Checked the app', get_upgrade_link: 'Shared the link to Pro plans' };
 const ids = os => (os || []).map(o => o.id);
 function activitySummary(st, op, a, res) {
   const d = res.ok ? res.data : null;
@@ -1354,6 +1371,11 @@ function pruneDeclined(st) {
   for (const c of st.clearedAlerts || []) if (c.key && !st.declined.some(d => d.key === c.key)) c.key = null;
 }
 function migrate(st) {
+  if (!st.driftOnce && st.alerts) { // older spaces piled up one balance alert a month: keep only the newest per basket
+    const seen = new Set();
+    st.alerts = st.alerts.filter(a => a.type !== 'drift' || (!seen.has(a.basketId) && seen.add(a.basketId)));
+    st.driftOnce = true;
+  }
   if (st.namesUnique) return;
   const seen = new Set();
   for (const b of st.baskets || []) {

@@ -23,6 +23,7 @@ function useRoute() {
   useEffect(() => {
     const on = () => { if (store.ui.sheet) closeSheet(); setR(parseHash()); window.scrollTo(0, 0); }; // Back/forward never leaves a sheet over another page
     window.addEventListener('hashchange', on);
+    setR(parseHash()); // the hash may have changed before this listener existed (e.g. a link from Claude)
     return () => window.removeEventListener('hashchange', on);
   }, []);
   return r;
@@ -63,7 +64,8 @@ function NotifRow({ a, cleared, open, toggle }) {
       <span class="s">${short(a.date)}${bname ? ' · ' + bname : ''}${cleared ? ` · cleared ${short(a.clearedAt)}` : ''}${a.why?.length ? html` · <button class="linkbtn" style="font-size:12px" aria-expanded=${open} onClick=${toggle}>${open ? 'Hide' : 'Why?'}</button>` : null}</span>
       ${open && html`<div class="why">${a.why.map((w, i) => html`<span key=${i}>${w}</span>`)}</div>`}
       ${cleared && a.cancelled?.length > 0 && html`<span class="s">Cancelled with it: ${a.cancelled.map(o => `${o.side} ${o.qty} ${o.name}`).join(', ')}</span>`}
-      ${orders.length > 0 && html`<button class="btn small" style="align-self:flex-start;margin-top:6px" onClick=${() => openSheet({ type: 'review', ids: orders })}>Review ${orders.length} order${orders.length > 1 ? 's' : ''}</button>`}</span>
+      ${orders.length > 0 && html`<button class="btn small" style="align-self:flex-start;margin-top:6px" onClick=${() => openSheet({ type: 'review', ids: orders })}>Review ${orders.length} order${orders.length > 1 ? 's' : ''}</button>`}
+      ${!cleared && a.action?.kind === 'rebalance' && S.baskets.some(b => b.id === a.action.basketId) && html`<button class="btn small primary" style="align-self:flex-start;margin-top:6px" onClick=${() => openSheet({ type: 'rebalance', id: a.action.basketId })}>Rebalance</button>`}</span>
     ${cleared && a.key && html`<button class="btn small ghost" onClick=${() => act('restore_todo', { key: a.key }, { ok: 'Restored to Pending' })}>Restore</button>`}
     ${!cleared && html`<button class="iconlink" aria-label="Delete notification" title="Delete" onClick=${() => deleteAlert(a)}>${I.x}</button>`}</div>`;
 }
