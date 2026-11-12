@@ -56,7 +56,7 @@ let toastTimer;
 export function toast(text, opts = {}) {
   store.ui = { ...store.ui, toast: { text, ...opts, at: Date.now() } };
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { store.ui = { ...store.ui, toast: null }; emit(); }, opts.err ? 5000 : 3200);
+  toastTimer = setTimeout(() => { store.ui = { ...store.ui, toast: null }; emit(); }, opts.err ? 5000 : opts.action ? 6000 : 3200); // a toast with a button stays long enough to tap it
   emit();
 }
 export function openSheet(sheet) { store.ui = { ...store.ui, sheet }; emit(); }

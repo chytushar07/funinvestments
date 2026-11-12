@@ -183,7 +183,7 @@ await journey('10. Orders page: rules sell → Keep anyway → journal edit/dele
   await reload('orders'); check('rules sell shows in Orders', /sell/i.test(await text()));
   await tap('Review all', 'page', { optional: true }) || await tap('Review', 'page');
   await tap('Keep anyway', 'sheet'); // one tap; the reason is added from the toast
-  await p.evaluate(() => [...document.querySelectorAll('.toast button')].find(b => b.textContent.includes('Add reason'))?.click()); await wait(500);
+  await p.waitForSelector('.toast button', { timeout: 6000 }).catch(() => {}); await p.evaluate(() => [...document.querySelectorAll('.toast button')].find(b => b.textContent.includes('Add reason'))?.click()); await wait(500);
   await type('#jr', 'Long term view'); await tap('Save', 'sheet');
   let st = await S(); check('kept: no pending, journal entry', st.pending === 0 && st.journal[0]?.action === 'Kept anyway', JSON.stringify(st.journal[0]));
   await reload('account'); const j = await tap('Long term view', 'page', { optional: true }) || await tap('Kept anyway', 'page', { optional: true });
