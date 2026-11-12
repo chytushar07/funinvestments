@@ -27,7 +27,7 @@ export function mcpHandle(msg, call, opts = {}) {
     const args = params.arguments || {};
     const res = call(tool.op || name, tool.args ? tool.args(args) : args);
     // Claude can always hand the user the link to the space it is working in.
-    if (opts.website && res.ok && (name === 'get_activity' || name === 'get_basket_status') && res.data && typeof res.data === 'object') res.data = { ...res.data, website: opts.website, website_note: 'This link opens the same space Claude works in. Each browser has its own space unless opened with this link.' };
+    if (opts.website && res.ok && (name === 'get_activity' || name === 'get_basket_status' || name === 'request_delete_basket') && res.data && typeof res.data === 'object') res.data = { ...res.data, website: opts.website, website_note: 'This link opens the same space Claude works in. Each browser has its own space unless opened with this link.' };
     // Upgrading is the user's tap: Claude gets a link that opens Plans and prices in this space.
     if (opts.website && name === 'get_upgrade_link' && res.ok) res.data = { ...res.data, url: `${opts.website}&go=pricing&billing=${res.data.billing}` };
     if (opts.website && !res.ok && res.error?.code === 'pro_feature') res.error = { ...res.error, upgrade_url: `${opts.website}&go=pricing&billing=yearly`, upgrade_note: 'Give the user this link to see Pro and upgrade themselves.' };

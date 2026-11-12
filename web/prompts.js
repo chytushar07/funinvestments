@@ -20,8 +20,8 @@ export const CATEGORIES = [
 
 // Words for the themes we know. Any other theme in S.themes gets the generic line.
 const THEME_TEXT = {
-  ac: 'Build an AC value chain basket in FunInvestments with stocks my rules rate Buy. Keep each value-chain stage under 40%.',
-  energy: 'Build a basket of energy companies that were profitable in each of the last 2 years and that my rules rate Buy.',
+  ac: 'Build an AC value chain basket in FunInvestments with up to 8 stocks my rules rate Buy, keeping each value-chain stage under 40%. If fewer than 6 fit, tell me which ones and why the others were skipped.',
+  energy: 'Build a basket of up to 8 energy companies that were profitable in each of the last 2 years and that my rules rate Buy. If fewer than 6 fit the segment limits, tell me which ones and what I could add.',
 };
 const themeText = label => `Build a ${label} basket in FunInvestments: 6–8 stocks my rules rate Buy, no single stock over 20%.`;
 
@@ -75,6 +75,8 @@ export function promptContext(S, { tools, basketId } = {}) {
     flagStock: openFlags[0]?.name || uName(openFlags[0]?.symbol) || 'that stock', resultStock: result ? uName(result.symbol) : 'that company',
     nextStock: next ? uName(next.symbol) : 'the next company', nextDate: next ? fmtDate(next.date) : 'soon',
     track: sTracking[0]?.name || 'my real shares', trackStock: sTracking[0]?.stocks?.[0]?.name || 'one stock', todo: soft?.text || 'a reminder',
+    newStock: Object.values(S.universe || []).some(u => u.symbol === 'HAL') ? 'Bharat Dynamics (BDL)' : 'Hindustan Aeronautics (HAL)',
+    investAmt: '₹' + Math.max(1000, Math.floor(Math.min(50000, (S.cash || 0)) / 1000) * 1000).toLocaleString('en-IN'),
     unused: exited?.name || sModels.find(b => !b.isInvested && !b.pendingOrders)?.name || 'a basket I don\'t use',
   };
   return {
@@ -110,12 +112,12 @@ const P = [
     block: NEW_BASKET, score: c => (c.fresh ? 25 : 5) },
   { id: 'build-own', cat: 'build', title: 'My own theme', text: 'Help me build a basket around my own idea. Ask me the theme first, then pick stocks FunInvestments rates Buy, and add any missing company with its numbers.', needs: ['create_basket'],
     block: NEW_BASKET, score: c => (c.fresh ? 20 : 4) },
-  { id: 'build-research', cat: 'build', title: 'Add a stock I researched', text: 'Research {stock2} and add it to FunInvestments with all 13 numbers and its theme share, then tell me its rating.', needs: ['add_candidate'], score: () => 3 },
+  { id: 'build-research', cat: 'build', title: 'Add a stock I researched', text: 'Research {newStock}, a company I can\'t find in FunInvestments\' Explore, and add it with all 13 numbers and its theme share. Then tell me its rating.', needs: ['add_candidate'], score: () => 3 },
   { id: 'build-copy', cat: 'build', title: 'Copy a basket to try changes', text: 'Make a copy of {basket} called "{basket} test" so I can try other stocks without touching the original.', needs: ['duplicate_basket'],
     show: c => c.sModels > 0, block: NEW_BASKET, score: () => 4 },
 
   // Check and explain
-  { id: 'check-sell', cat: 'check', title: 'Why did {sellStock} turn Sell?', text: 'Why did {sellStock} turn Sell in {sellBasket}? Which rules failed, and since when?', needs: ['get_basket_status'],
+  { id: 'check-sell', cat: 'check', title: 'Why did {sellStock} turn Sell?', text: 'Why did {sellStock} turn Sell in {sellBasket}? Which rules failed, with their values against the limits, and when did it change?', needs: ['get_basket_status'],
     score: c => (c.sell ? 80 : 0) },
   { id: 'check-hold', cat: 'check', title: 'Why is {holdStock} Hold?', text: 'Why is {holdStock} rated Hold in {holdBasket}? Show its warnings and what would make it Buy again.', needs: ['get_basket_status'],
     score: c => (c.hold ? 45 : 0) },
@@ -133,7 +135,7 @@ const P = [
     score: c => (c.below ? 90 : 0), show: c => c.below },
   { id: 'invest-refill', cat: 'invest', title: 'Why is {below} short?', text: 'Show the refill plan for {below}: which stocks could fill it and why the others were skipped.', needs: ['get_refill_plan'],
     show: c => c.below, score: c => (c.below ? 40 : 0) },
-  { id: 'invest-first', cat: 'invest', title: 'Invest in {built}', text: 'Prepare buy orders to invest ₹50,000 in {built}, split by target weights. I\'ll confirm them in the app.', needs: ['create_order'],
+  { id: 'invest-first', cat: 'invest', title: 'Invest in {built}', text: 'Prepare buy orders to invest {investAmt} in {built}, split by target weights. I\'ll confirm them in the app.', needs: ['create_order'],
     score: c => (c.built ? 75 : 0), show: c => c.built },
   { id: 'invest-pending', cat: 'invest', title: 'Explain my waiting orders', text: 'Explain the {pendingN} orders waiting in {pendingBasket}: what each one does and why. I\'ll confirm or cancel them in the app.', any: ['get_activity', 'get_orders'],
     show: c => c.pending > 0, score: c => (c.pending ? 85 : 0) },
@@ -195,7 +197,7 @@ const P = [
     show: c => c.delReq, score: c => (c.delReq ? 86 : 0) },
   { id: 'exit-weak', cat: 'exit', title: 'Sell {sellStock}', text: 'Remove {sellStock} from {sellBasket} and prepare the sell. I\'ll confirm it in the app.', needs: ['remove_stock'],
     show: c => c.sell, score: c => (c.sellHeld ? 65 : c.sell ? 20 : 0) },
-  { id: 'exit-reinvest', cat: 'exit', title: 'Re-invest in {exited}', text: 'I sold {exited}. Check its stocks again on my rules, and if they still rate Buy, prepare buy orders for ₹50,000. I\'ll confirm them in the app.', needs: ['create_order', 'get_basket_status'],
+  { id: 'exit-reinvest', cat: 'exit', title: 'Re-invest in {exited}', text: 'I sold {exited}. Check its stocks again on my rules, and if they still rate Buy, prepare buy orders for {investAmt}. I\'ll confirm them in the app.', needs: ['create_order', 'get_basket_status'],
     show: c => c.exited, score: c => (c.exited ? 66 : 0) },
   { id: 'exit-review', cat: 'exit', title: 'How did {exited} do?', text: 'Review {exited}: what I made or lost, which rules sold what, and whether they were right.', any: ['get_rule_scorecard', 'get_basket_status'],
     show: c => c.exited, score: c => (c.exited ? 58 : 0) },

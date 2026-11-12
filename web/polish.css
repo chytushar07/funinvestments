@@ -31,3 +31,7 @@
 /* Demo date: the label sits above the date inside the pill (it was a legend on the border and got clipped). */
 .clock .clock-date { flex-direction: column; align-items: flex-start; gap: 1px; padding: 2px 4px 2px 8px; overflow: visible; }
 .clock-k { position: static; padding: 0; background: none; font-size: 8px; line-height: 10px; }
+/* Stock cards: the warnings count never wraps; a long sector is cut with "…" instead of squeezing it. */
+.scard .foot { gap: 6px; min-width: 0; }
+.scard .foot .pts { white-space: nowrap; flex: none; }
+.scard .foot > .faint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }

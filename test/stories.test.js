@@ -203,4 +203,24 @@ test('Small fixes: names, plain errors, pending sell blocks add, to-dos for drif
   F.ok('remove_stock', { basket_id: fb.id, symbol: 'SRF', sell: true });
   assert.equal(F.code('add_stock', { basket_id: fb.id, symbol: 'BLUESTARCO' }), 'pending_sell');
   assert.match(F.call('add_stock', { basket_id: fb.id, symbol: 'BLUESTARCO' }).error.message, /Confirm or cancel it first/);
+  // a rebalance waits for orders already waiting in the basket
+  assert.equal(F.code('rebalance_plan', { basket_id: fb.id, draft: true }), 'orders_waiting');
+});
+
+test('Re-test follow-ups: add_candidate dip is a heads-up, refill plan = drafted, delete preview, since, plain pointers', () => {
+  const S = mk('pro');
+  S.ok('add_candidate', { symbol: 'MYCO', name: 'My Co', sector: 'Capital goods', stage: 'parts', themes: { ac: 50 }, price: 200, metrics: { adtv: 5, pledge: 0, de: 0.4, icr: 12, loss: 0, vol: 25, beta: 0.9, dd: 20, cash: 1, roe: 18, margin: 1, pe: 25, peg: 1.2 } });
+  const b = S.ok('create_basket', { name: 'AC', symbols: ['SRF', 'NAVINFLUOR', 'HAVELLS', 'VOLTAS', 'KIRLPNU', 'MYCO'] }).basket;
+  S.ok('add_candidate', { symbol: 'MYCO', metrics: { adtv: 1.7 } });
+  assert.equal(S.st.baskets[0].statusPrev.MYCO, 'pass', 'first bad number: heads-up only');
+  assert.ok(S.st.alerts.some(a => a.symbol === 'MYCO' && a.type === 'strike'));
+  assert.ok(S.ok('get_basket_status', { basket_id: b.id }).basket.stocks[0].since);
+  const e = S.call('create_basket', { name: 'X', symbols: ['TSLA'] }).error;
+  assert.equal(e.code, 'empty_basket'); assert.match(e.message, /add_candidate/); assert.match(e.skipped[0].why, /add_candidate/);
+  S.ok('request_delete_basket', { basket_id: b.id });
+  assert.ok(S.ok('get_basket_status', { basket_id: b.id }).delete_preview);
+  const F = mk('free');
+  assert.equal(F.call('set_basket_rule', { min_stocks: 5 }).error?.feature ?? 'basket limits', 'basket limits');
+  const t = F.ok('create_basket', { name: 'Mine', kind: 'tracking', holdings: [{ symbol: 'NTPC', qty: 5 }, { symbol: 'SRF', qty: 2 }] }).basket;
+  assert.match(F.ok('remove_stock', { basket_id: t.id, symbol: 'NTPC', sell: true }).note, /sell them in their own broker/);
 });

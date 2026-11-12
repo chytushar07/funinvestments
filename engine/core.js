@@ -633,6 +633,7 @@ function stockView(st, sym, b) {
     qty: h?.qty || 0, avg: h?.avg || null, value: h ? r2(h.qty * px) : 0,
     flags: st.flags.filter(f => f.symbol === sym && f.status === 'open').map(f => ({ id: f.id, metric: f.metric, label: labelOf(f.metric), impact: f.impact })),
     why: whyOf(st, u, rulesOf(st, b ? b.rules : st.rules), s),
+    ...(b ? { since: st.decisions.find(d => d.basketId === b.id && d.symbol === sym && (/^status_/.test(d.action) || d.action === 'added' || d.action === 'refill_add'))?.date || b.createdAt } : {}),
   };
 }
 
@@ -767,7 +768,7 @@ const OPS = {
     const maxStocks = Math.min(probe.limits.maxStocks, plan(st).maxStocks);
     for (const sym of input) {
       const u = st.universe[sym];
-      if (!u) { skipped.push({ symbol: sym, why: 'Not in our stock list · add it in Explore' }); continue; }
+      if (!u) { skipped.push({ symbol: sym, why: 'Not in our stock list yet · add it with add_candidate (or Explore → + Add stock), then add it to the basket' }); continue; }
       const s = scoreIn(st, probe, sym);
       if (kind === 'model' && s.status === 'remove') { skipped.push({ symbol: sym, name: u.name, why: `Fails this basket's rules · ${s.reasons[0]}` }); continue; }
       eligible.push(sym);
@@ -791,7 +792,7 @@ const OPS = {
     const final = res.out;
     for (const sym of res.over) skipped.push({ symbol: sym, name: st.universe[sym].name, why: `Too much in ${STAGE_LABEL[st.universe[sym].stage]} (limit ${probe.limits.maxStageWeight}% of basket)` });
     for (const sym of res.full) skipped.push({ symbol: sym, name: st.universe[sym].name, why: isPro(st) ? `Basket full (${maxStocks} stocks max)` : `Basket full (${maxStocks} stocks max on Free; 12 on Pro)` });
-    if (!final.length) throw new ApiError('empty_basket', 'No stocks could be added', { skipped });
+    if (!final.length) throw new ApiError('empty_basket', skipped.length && skipped.every(x => !x.name) ? 'None of these stocks is in the stock list yet. Research each one and add it with add_candidate (its 13 numbers and theme share), then create the basket again.' : 'No stocks could be added: see why for each one.', { skipped });
     const b = newBasket(st, { name: uniqueName(st, cleanName(a.name, kind === 'tracking' ? 'My holdings' : 'My basket')), kind, theme, description: String(a.description || '').slice(0, 140), symbols: final, actor, rules, limits: probe.limits });
     if (kind === 'tracking' && a.holdings) {
       for (const h of a.holdings) { const sym = upper(h.symbol); if (final.includes(sym)) b.holdings[sym] = { qty: Math.max(0, Number(h.qty) || 0), avg: Number(h.avg_price) || st.prices[sym] }; }
@@ -941,6 +942,7 @@ const OPS = {
       else order = makeOrder(st, { basketId: b.id, symbol: sym, side: 'sell', qty: h.qty, source: actor, tag: 'manual', removeAfter: true, reason: 'Sell and remove' });
       return { orders: [order], note: 'Sell drafted. Confirm it to remove the stock.' };
     }
+    const trackedQty = b.kind === 'tracking' ? b.holdings[sym]?.qty || 0 : 0;
     if (b.kind === 'tracking') delete b.holdings[sym];
     removeFromBasket(st, b, sym, a.reason || 'Removed by you', actor);
     b.editedBy = actor; b.updatedAt = st.clock;
@@ -948,7 +950,7 @@ const OPS = {
     const before = new Set(b.symbols);
     ensureRefill(st, b);
     const refilled = b.symbols.filter(x => !before.has(x)).map(x => st.universe[x]?.name || x);
-    return { basket: basketView(st, b), refilled };
+    return { basket: basketView(st, b), refilled, ...(b.kind === 'tracking' ? { note: `Removed from tracking${trackedQty ? ` (${trackedQty} shares)` : ''}. Nothing was sold here: a tracking basket places no orders. If the user still owns the shares, they sell them in their own broker.` } : {}) };
   },
 
   set_holding(st, a, actor) {
@@ -968,7 +970,8 @@ const OPS = {
 
   get_basket_status(st, a) {
     if (!a.basket_id && st.baskets.length !== 1) return { baskets: st.baskets.map(b => basketView(st, b)), cash: st.cash, asOf: st.clock, mock: true };
-    return { basket: basketView(st, getBasket(st, a.basket_id)), cash: st.cash, asOf: st.clock, mock: true };
+    const b = getBasket(st, a.basket_id);
+    return { basket: basketView(st, b), cash: st.cash, asOf: st.clock, mock: true, ...(b.deleteRequest ? { delete_preview: OPS.delete_preview(st, { basket_id: b.id }) } : {}) };
   },
 
   get_universe(st, a) { const stocks = universeList(st, a); return { count: stocks.length, stocks: stocks.slice(0, a.limit || 200), filters: { sectors: [...new Set(Object.values(st.universe).map(u => u.sector))], themes: THEMES }, asOf: st.clock, mock: true }; },
@@ -992,7 +995,7 @@ const OPS = {
     track(st, ex ? 'candidate_updated' : 'candidate_added', { source: actor });
     const holders = st.baskets.filter(b => b.symbols.includes(sym));
     const snap = snapRules(st, holders, false);
-    for (const b of holders) checkBasket(st, b, 'rules');
+    for (const b of holders) checkBasket(st, b, 'data'); // new numbers count like a check: a daily-number dip is a heads-up first
     const s = scoreStock(st.universe[sym], rulesOf(st, st.rules));
     return { updated: !!ex, stock: { symbol: sym, name: st.universe[sym].name, status: s.status, rating: STATUS_WORD[s.status], points: s.points, reasons: s.reasons, missing: s.missing, why: whyOf(st, st.universe[sym], rulesOf(st, st.rules), s) }, note: s.missing.length >= 3 ? 'Missing numbers → Hold until filled' : undefined, ...(holders.length ? { changed: ruleReport(st, snap) } : {}) };
   },
@@ -1274,11 +1277,12 @@ const OPS = {
       st.declined = [...(st.declined || []).filter(d => d.key !== t.key), { key: t.key, at: st.clock }];
     }
     const restorable = !['orders', 'delete'].includes(t.kind) && t.kind !== 'alerts';
-    archiveAlerts(st, [{ id: nid(st, 'a'), type: 'declined', date: st.clock, basketId: t.basketId, text: `Declined: ${t.text}`, why: [t.detail], key: restorable ? t.key : null }], actor, []);
+    archiveAlerts(st, [{ id: nid(st, 'a'), type: 'declined', date: st.clock, basketId: t.basketId, text: `Declined: ${t.text}`, why: [t.detail], key: restorable ? t.key : null, declinedKey: t.key, restorable }], actor, []);
     st.clearedAlerts[0].cancelled = cancelled;
     return { declined: t.key, text: t.text, cancelled };
   },
   restore_todo(st, a) {
+    if (!(st.declined || []).some(d => d.key === a.key)) throw new ApiError('not_found', /^(orders|delete):/.test(a.key || '') ? 'Declined orders were cancelled and a declined delete request kept the basket: there is nothing to restore. Prepare the orders again if needed.' : 'No declined item with that key (get_notifications tab "cleared").');
     st.declined = (st.declined || []).filter(d => d.key !== a.key);
     st.clearedAlerts = (st.clearedAlerts || []).filter(x => x.key !== a.key);
     return { restored: a.key };
@@ -1320,15 +1324,23 @@ const OPS = {
 
   get_refill_plan(st, a) {
     const b = getBasket(st, a.basket_id);
+    const pendingOrders = st.orders.filter(o => o.basketId === b.id && o.status === 'pending' && o.tag === 'refill');
+    // Once replacements are drafted, the plan is those orders (not a fresh pick that could differ).
+    if (pendingOrders.length) return { basket: b.name, count: b.symbols.length, min: b.limits.minStocks, needed: pendingOrders.length, picks: pendingOrders.map(o => ({ symbol: o.symbol, name: o.name, qty: o.qty, orderId: o.id, why: o.reason })), skipped: refillPlan(st, b).skipped, short: 0, drafted: true, note: 'These replacement buys are drafted and wait for the user to confirm them.', pendingOrders };
     const p = refillPlan(st, b);
-    return { basket: b.name, count: b.symbols.length, min: b.limits.minStocks, ...p, pendingOrders: st.orders.filter(o => o.basketId === b.id && o.status === 'pending' && o.tag === 'refill') };
+    return { basket: b.name, count: b.symbols.length, min: b.limits.minStocks, ...p, drafted: false, pendingOrders };
   },
 
   rebalance_plan(st, a, actor) {
     const b = getBasket(st, a.basket_id);
     if (b.kind === 'tracking') throw new ApiError('tracking_no_orders', 'Tracking baskets don\'t place orders.');
     const d = rebalanceTrades(st, b);
-    if (!a.draft) return d;
+    const waiting = st.orders.filter(o => o.basketId === b.id && o.status === 'pending');
+    if (!a.draft) return { ...d, ordersWaiting: waiting.length };
+    // A rebalance is planned on what the basket holds now: orders still waiting would change that, so they come first.
+    const other = waiting.filter(o => o.tag !== 'rebalance');
+    if (other.length) throw new ApiError('orders_waiting', `${b.name} has ${other.length} order${other.length > 1 ? 's' : ''} waiting (${other.map(o => `${o.side} ${o.name}`).slice(0, 3).join(', ')}). Confirm or cancel ${other.length > 1 ? 'them' : 'it'} first, then rebalance.`, { orders: other.map(o => o.id) });
+    for (const o of waiting) cancelOrder(st, o, 'Replaced by a new rebalance');
     const orders = d.trades.map(t => makeOrder(st, { basketId: b.id, symbol: t.symbol, side: t.side, qty: t.qty, source: actor, tag: 'rebalance', reason: `Rebalance to ${t.target}% of basket` }));
     return { ...d, orders, note: orders.length ? undefined : 'Nothing to do: the basket is as close to its targets as whole shares allow.' };
   },
@@ -1709,7 +1721,7 @@ export function dispatch(st, op, args = {}, actor = 'you') {
   if (actor === 'claude') { st.lastClaudeCall = { op, at: st.clock, time: new Date().toISOString() }; st.claudeConnected = true; }
   if (actor === 'claude' && PERSON_ONLY.has(op)) { const res = { ok: false, error: { code: 'person_only', message: `Only the user can do this, in the website. ${PERSON_ONLY_REASONS[op]}` } }; logActivity(st, op, args, res); return res; }
   try {
-    if (actor === 'claude' && CLAUDE_PRO_RULES.has(op) && !isPro(st)) throw proError('Claude editing your rules');
+    if (actor === 'claude' && CLAUDE_PRO_RULES.has(op) && !isPro(st)) throw proError(op === 'set_basket_rule' ? 'basket limits' : 'Claude editing your rules');
     const res = { ok: true, data: fn(st, args || {}, actor) };
     settleOrderAlerts(st);
     pruneDeclined(st);
