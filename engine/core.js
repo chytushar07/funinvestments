@@ -2,13 +2,14 @@
 // The website (actor "you") and MCP/Claude (actor "claude") both call dispatch().
 // Plain deterministic code. No AI anywhere.
 import { defaultRuleSet, scoreStock, band, labelOf, DEFAULT_RULES, fmtThreshold, cutoffsOf, DEFAULT_CUTOFFS } from './rules.js';
-import { buildHistory, buildPriceHistory, buildUniverse, SEED_PRICES, SEED_PREV, NIFTY_SEED, NIFTY_PREV, FILINGS, STOCKS, STAGES, THEMES } from './data.js';
+import { buildHistory, buildPriceHistory, buildUniverse, SEED_PRICES, SEED_PREV, NIFTY_SEED, NIFTY_PREV, FILINGS, ALL_STOCKS, STAGES, THEMES, BASE_SYMBOLS, HAS_REAL_HISTORY, REAL_FIRST_DAY } from './data.js';
 import { MockProvider } from './market.js';
 import { backtest } from './scorecard.js';
 
 export const HISTORY = buildHistory();
 export const PRICE_HISTORY = buildPriceHistory(HISTORY);
-const NAMES = Object.fromEntries(STOCKS.map(s => [s.symbol, s.name]));
+const NAMES = Object.fromEntries(ALL_STOCKS.map(s => [s.symbol, s.name]));
+const DEFAULT_MOCK = []; // a stock added by hand (add_candidate) carries the numbers it was given
 const STAGE_LABEL = Object.fromEntries(STAGES.map(s => [s.id, s.label]));
 const THEME_LABEL = Object.fromEntries(THEMES.map(t => [t.id, t.label]));
 
@@ -60,6 +61,43 @@ export function createState() {
     onboarded: false, claudeConnected: false, lastClaudeCall: null,
   };
 }
+// ---------------- storage ----------------
+// The ~660-stock universe and its prices come from the shared module (data.js), not from each user's save.
+// packState keeps only what this space changed: stocks whose data differs from the built-in copy (filings,
+// news, added candidates) and today's prices as two compact arrays. unpackState rebuilds the full state.
+let BASE_JSON = null;
+const baseJson = () => (BASE_JSON ||= Object.fromEntries(Object.entries(buildUniverse()).map(([k, v]) => [k, JSON.stringify(v)])));
+const pxArr = (map, fallback) => BASE_SYMBOLS.map(s => map[s] ?? fallback[s] ?? 0);
+export function packState(st) {
+  const base = baseJson();
+  const uni = {};
+  for (const [sym, u] of Object.entries(st.universe)) if (base[sym] !== JSON.stringify(u)) uni[sym] = u;
+  const gone = Object.keys(base).filter(sym => !st.universe[sym]);
+  const extra = {};
+  for (const sym of Object.keys(st.prices)) if (!(sym in SEED_PRICES)) extra[sym] = [st.prices[sym], st.prevPrices[sym] ?? st.prices[sym]];
+  const { universe, prices, prevPrices, ...rest } = st;
+  return { ...rest, packed: 1, uni, ...(gone.length ? { uniGone: gone } : {}), px: pxArr(prices, SEED_PRICES), pv: pxArr(prevPrices, SEED_PREV), pxExtra: extra };
+}
+export function unpackState(saved) {
+  if (!saved) return saved;
+  const { packed, uni, uniGone, px, pv, pxExtra, ...rest } = saved;
+  const st = rest;
+  st.universe = buildUniverse();
+  st.prices = { ...SEED_PRICES }; st.prevPrices = { ...SEED_PREV };
+  if (packed) {
+    Object.assign(st.universe, uni || {});
+    for (const sym of uniGone || []) delete st.universe[sym];
+    BASE_SYMBOLS.forEach((sym, i) => { if (px?.[i] != null) st.prices[sym] = px[i]; if (pv?.[i] != null) st.prevPrices[sym] = pv[i]; });
+    for (const [sym, [p, q]] of Object.entries(pxExtra || {})) { st.prices[sym] = p; st.prevPrices[sym] = q; }
+  } else {
+    // A save from before the wider universe: it carried its own 55 stocks (plus any added) and their prices.
+    Object.assign(st.universe, saved.universe || {});
+    for (const u of Object.values(st.universe)) if (!u.mock && u.source === 'default') u.mock = DEFAULT_RULES.map(r => r.id);
+    Object.assign(st.prices, saved.prices || {}); Object.assign(st.prevPrices, saved.prevPrices || {});
+  }
+  return st;
+}
+
 export function provider(st) { const p = new MockProvider(st); Object.defineProperty(st, '__priceHistory', { value: PRICE_HISTORY, enumerable: false, configurable: true }); return p; }
 
 const nid = (st, p) => `${p}${st.seq++}`;
@@ -126,9 +164,9 @@ function candidatesFor(st, b) {
 }
 
 // ---------------- weights & refill ----------------
-export function targetWeights(st, basket, symbols = basket.symbols) {
+export function targetWeights(st, basket, symbols = basket.symbols, known = null) {
   const L = basket.limits;
-  const statuses = Object.fromEntries(symbols.map(s => [s, scoreIn(st, basket, s, basket.statusPrev[s])?.status || 'watch']));
+  const statuses = Object.fromEntries(symbols.map(s => [s, known?.[s] || scoreIn(st, basket, s, basket.statusPrev[s])?.status || 'watch']));
   const active = symbols.filter(s => statuses[s] !== 'remove');
   const w = {};
   if (!active.length) return { weights: w, cash: 100, statuses };
@@ -150,21 +188,27 @@ function stageWeights(st, weights) {
   return out;
 }
 
-// Why a stock can't be added to a basket right now (same checks as add_stock), for the Add buttons.
+// Why a stock can't be added to a basket right now (same checks as add_stock), for the Add buttons. Computed on
+// request (the pickers and the stock page ask for it), never stored, so it always follows the current rules.
+function addBlockFor(st, b, sym, base) {
+  const u = st.universe[sym];
+  if (!u || b.symbols.includes(sym)) return null;
+  const max = Math.min(b.limits.maxStocks, plan(st).maxStocks);
+  if (b.symbols.length >= max) return `Basket is full (${max} max${isPro(st) ? '' : ' on Free'})`;
+  const s = scoreIn(st, b, sym);
+  if (s.status === 'remove') return `Rated Sell here: ${s.reasons[0]}`;
+  if (b.symbols.length + 1 >= b.limits.minStocks) {
+    // Stage check: the basket's own target weights plus this one stock (statuses of the basket's stocks are reused).
+    const tw = targetWeights(st, b, [...b.symbols, sym], base);
+    const sw = stageWeights(st, tw.weights);
+    if ((sw[u.stage] || 0) > b.limits.maxStageWeight + 0.01) return `Over the ${b.limits.maxStageWeight}% ${STAGE_LABEL[u.stage] || u.stage} limit`;
+  }
+  return null;
+}
 function addBlocks(st, b) {
   const out = {};
-  const max = Math.min(b.limits.maxStocks, plan(st).maxStocks);
-  const full = b.symbols.length >= max;
-  for (const u of Object.values(st.universe)) {
-    if (b.symbols.includes(u.symbol)) continue;
-    if (full) { out[u.symbol] = `Basket is full (${max} max${isPro(st) ? '' : ' on Free'})`; continue; }
-    const s = scoreIn(st, b, u.symbol);
-    if (s.status === 'remove') { out[u.symbol] = `Rated Sell here: ${s.reasons[0]}`; continue; }
-    if (b.symbols.length + 1 >= b.limits.minStocks) {
-      const sw = stageWeights(st, targetWeights(st, b, [...b.symbols, u.symbol]).weights);
-      if ((sw[u.stage] || 0) > b.limits.maxStageWeight + 0.01) out[u.symbol] = `Over the ${b.limits.maxStageWeight}% ${STAGE_LABEL[u.stage] || u.stage} limit`;
-    }
-  }
+  const base = Object.fromEntries(b.symbols.map(s => [s, scoreIn(st, b, s, b.statusPrev[s])?.status || 'watch']));
+  for (const sym of Object.keys(st.universe)) { const why = addBlockFor(st, b, sym, base); if (why) out[sym] = why; }
   return out;
 }
 
@@ -393,7 +437,9 @@ function ruleLines(st, b, sym) {
   const rules = b ? b.rules : st.rules;
   return rules.metrics.map(r => {
     const v = u.metrics[r.id];
-    return { id: r.id, label: r.label, value: v, valueText: v == null ? '—' : `${v}${r.unit === '%' ? '%' : r.unit === '×' ? '×' : r.unit === '₹ cr' ? ' cr' : ''}`, band: r.enabled ? band(r, v) : 'off', green: fmtThreshold(r, 'green'), red: fmtThreshold(r, 'red'), critical: r.critical, enabled: r.enabled };
+    const na = (u.na || []).includes(r.id);
+    return { id: r.id, label: r.label, value: na ? null : v, valueText: na ? 'n/a' : v == null ? '—' : `${v}${r.unit === '%' ? '%' : r.unit === '×' ? '×' : r.unit === '₹ cr' ? ' cr' : ''}`, band: !r.enabled ? 'off' : na ? 'na' : band(r, v), green: fmtThreshold(r, 'green'), red: fmtThreshold(r, 'red'), critical: r.critical, enabled: r.enabled,
+      ...(na ? { note: 'Does not apply to banks and lenders' } : (u.mock || DEFAULT_MOCK).includes(r.id) ? { sample: true } : {}) };
   });
 }
 
@@ -487,39 +533,64 @@ export function basketView(st, b) {
     unread: st.alerts.filter(a => a.basketId === b.id && !a.read).length,
     ...(() => { if (!isInv || b.kind !== 'model') return { drift: 0, needsRebalance: false }; const rb = rebalanceTrades(st, b); return { drift: r2(rb.max), needsRebalance: rb.needed }; })(),
     held: Object.values(b.holdings).filter(h => h.qty > 0).length,
-    addBlock: b.kind === 'model' ? addBlocks(st, b) : {},
   };
 }
 
+// The stock list behind Explore, search, the pickers and Claude's get_universe. Cheap filters first, then each
+// remaining stock is rated with the CURRENT default rules (or one basket's rules with basket_id), so a rule change
+// shows up on the very next call: nothing here is cached.
+// With theme, the rating includes that theme's share-of-business rule. Rows are slim; get_stock has the details.
 function universeList(st, a = {}) {
   const q = String(a.q || '').trim().toLowerCase();
   const py = a.profitable_years != null ? Number(a.profitable_years) : null;
-  const list = Object.values(st.universe).map(u => {
-    const s = scoreStock(u, st.rules);
-    const byTheme = Object.fromEntries(Object.keys(u.themes || {}).map(t => { const x = scoreStock(u, st.rules, { theme: t, minTheme: DEFAULT_LIMITS.minTheme }); return [t, { status: x.status, points: x.points, reason: x.reasons[0] }]; }));
-    return {
-      symbol: u.symbol, name: u.name, sector: u.sector, stage: u.stage, stageLabel: STAGE_LABEL[u.stage] || u.stage, themes: u.themes, byTheme,
-      status: s.status, points: s.points, reasons: s.reasons, price: st.prices[u.symbol], changePct: chg(st, u.symbol),
-      profitableYears: profitableYears(u), lossYears5: u.metrics.loss, debtEquity: u.metrics.de, tradedValueCr: u.metrics.adtv,
-      source: u.source, inBaskets: st.baskets.filter(b => b.symbols.includes(u.symbol)).map(b => b.id),
-    };
-  })
-    .filter(x => !q || x.name.toLowerCase().includes(q) || x.symbol.toLowerCase().includes(q) || (x.sector || '').toLowerCase().includes(q))
-    .filter(x => !a.status || (a.theme ? x.byTheme?.[a.theme]?.status : x.status) === a.status)
-    .filter(x => !a.stage || x.stage === a.stage)
-    .filter(x => !a.sector || (x.sector || '').toLowerCase() === String(a.sector).toLowerCase())
-    .filter(x => !a.theme || x.themes?.[a.theme] != null)
-    .filter(x => py == null || x.profitableYears >= py)
-    .filter(x => a.max_debt_equity == null || (x.debtEquity != null && x.debtEquity <= Number(a.max_debt_equity)))
-    .filter(x => a.min_traded_value_cr == null || (x.tradedValueCr != null && x.tradedValueCr >= Number(a.min_traded_value_cr)))
-    .filter(x => a.max_warnings == null || x.points <= Number(a.max_warnings));
+  const b = a.basket_id ? st.baskets.find(x => x.id === a.basket_id) || null : null;
+  const theme = b ? b.theme : (a.theme || null);
+  const sector = a.sector ? String(a.sector).toLowerCase() : null;
+  const blocks = b && b.kind === 'model' ? addBlocks(st, b) : null;
+  const list = [];
+  for (const u of Object.values(st.universe)) {
+    if (q && !(u.name.toLowerCase().includes(q) || u.symbol.toLowerCase().includes(q) || (u.sector || '').toLowerCase().includes(q))) continue;
+    if (a.theme && u.themes?.[a.theme] == null) continue;
+    if (a.stage && u.stage !== a.stage) continue;
+    if (sector && (u.sector || '').toLowerCase() !== sector) continue;
+    if (a.max_debt_equity != null && !(u.metrics.de != null && u.metrics.de <= Number(a.max_debt_equity))) continue;
+    if (a.min_traded_value_cr != null && !(u.metrics.adtv != null && u.metrics.adtv >= Number(a.min_traded_value_cr))) continue;
+    if (a.exclude_basket && b?.symbols.includes(u.symbol)) continue;
+    const s = b ? scoreIn(st, b, u.symbol) : scoreStock(u, st.rules, theme ? { theme, minTheme: DEFAULT_LIMITS.minTheme } : {});
+    const pyrs = profitableYears(u);
+    if (a.status && s.status !== a.status) continue;
+    if (py != null && pyrs < py) continue;
+    if (a.max_warnings != null && s.points > Number(a.max_warnings)) continue;
+    list.push({
+      symbol: u.symbol, name: u.name, sector: u.sector, stage: u.stage, themes: u.themes,
+      status: s.status, points: s.points, why: s.reasons[0], price: st.prices[u.symbol], changePct: chg(st, u.symbol),
+      profitableYears: pyrs, lossYears5: u.metrics.loss, debtEquity: u.metrics.de, tradedValueCr: u.metrics.adtv,
+      ...(u.source !== 'default' ? { source: u.source } : {}),
+      ...(blocks && blocks[u.symbol] ? { block: blocks[u.symbol] } : {}),
+      ...(b && b.symbols.includes(u.symbol) ? { inBasket: true } : {}),
+    });
+  }
   const order = { pass: 0, watch: 1, remove: 2 };
   const sorts = {
     gainers: (x, y) => y.changePct - x.changePct, losers: (x, y) => x.changePct - y.changePct,
     movers: (x, y) => Math.abs(y.changePct) - Math.abs(x.changePct), name: (x, y) => x.name.localeCompare(y.name),
-    points: (x, y) => order[x.status] - order[y.status] || x.points - y.points,
+    points: (x, y) => order[x.status] - order[y.status] || x.points - y.points || (y.tradedValueCr || 0) - (x.tradedValueCr || 0),
+    liquid: (x, y) => (y.tradedValueCr || 0) - (x.tradedValueCr || 0),
   };
-  return list.sort(sorts[a.sort] || sorts.points);
+  const sort = sorts[a.sort] || sorts.points;
+  return blocks ? list.sort((x, y) => !!x.block - !!y.block || sort(x, y)) : list.sort(sort);
+}
+// A small tile for lists on Home and in baskets' neighbours.
+const tile = (st, u, s) => ({ symbol: u.symbol, name: u.name, sector: u.sector, stage: u.stage, themes: u.themes, status: s.status, points: s.points, price: st.prices[u.symbol], changePct: chg(st, u.symbol) });
+function themeCounts(st) {
+  const n = {};
+  for (const u of Object.values(st.universe)) for (const t of Object.keys(u.themes || {})) n[t] = (n[t] || 0) + 1;
+  return THEMES.map(t => ({ ...t, count: n[t.id] || 0 }));
+}
+function sectorCounts(st) {
+  const n = {};
+  for (const u of Object.values(st.universe)) n[u.sector] = (n[u.sector] || 0) + 1;
+  return Object.entries(n).sort((a, b) => a[0].localeCompare(b[0])).map(([name, count]) => ({ name, count }));
 }
 
 function cloneRules(r) { return JSON.parse(JSON.stringify(r)); }
@@ -775,7 +846,23 @@ const OPS = {
     return { basket: basketView(st, getBasket(st, a.basket_id)), cash: st.cash, asOf: st.clock, mock: true };
   },
 
-  get_universe(st, a) { const stocks = universeList(st, a); return { count: stocks.length, stocks: stocks.slice(0, a.limit || 200), filters: { sectors: [...new Set(Object.values(st.universe).map(u => u.sector))], themes: THEMES }, asOf: st.clock, mock: true }; },
+  get_universe(st, a) {
+    if (a.basket_id) getBasket(st, a.basket_id);
+    const stocks = universeList(st, a);
+    const limit = Math.max(1, Math.min(100, Math.floor(Number(a.limit) || 25)));
+    const offset = Math.max(0, Math.floor(Number(a.offset) || 0));
+    const page = stocks.slice(offset, offset + limit);
+    const next = offset + page.length < stocks.length ? offset + page.length : null;
+    const counts = { pass: 0, watch: 0, remove: 0 };
+    for (const x of stocks) counts[x.status]++;
+    return {
+      count: stocks.length, offset, returned: page.length, next_offset: next, ratings: counts, stocks: page,
+      ...(offset === 0 && !a.no_filters ? { filters: { themes: themeCounts(st), sectors: sectorCounts(st), segments: STAGES.filter(x => !a.theme || x.theme === a.theme).map(x => ({ id: x.id, label: x.label, theme: x.theme })) } } : {}),
+      ...(next != null ? { more: `${stocks.length - next} more: call again with offset ${next}, or narrow with q, theme, sector, stage or status.` } : {}),
+      rated_by: a.basket_id ? 'this basket\'s rules' : `your default rules${a.theme ? ' and the theme-share rule' : ''}`, asOf: st.clock,
+      data: 'Prices and price history are real NSE data; some rule numbers are sample (mock) values, see get_stock.',
+    };
+  },
 
   // ---- Universe candidates: create / update / delete ----
   add_candidate(st, a, actor) {
@@ -814,7 +901,7 @@ const OPS = {
     const theme = a.theme || 'ac';
     if (a.share === '' || a.share == null) delete u.themes[theme]; else u.themes[theme] = Math.max(0, Math.min(100, Number(a.share)));
     for (const b of st.baskets) if (b.symbols.includes(u.symbol)) checkBasket(st, b, 'rules');
-    return { stock: universeList(st).find(x => x.symbol === u.symbol), editedBy: actor };
+    return { stock: universeList(st, { q: u.symbol }).find(x => x.symbol === u.symbol), editedBy: actor };
   },
 
   // ---- Rules (per basket) ----
@@ -1202,13 +1289,16 @@ const OPS = {
       baskets: st.baskets.map(b => basketView(st, b)), orders: st.orders.slice(0, 150), alerts: st.alerts.slice(0, 150), clearedAlerts: (st.clearedAlerts || []).slice(0, 100),
       unread: st.alerts.filter(a => !a.read).length, pending: st.orders.filter(o => o.status === 'pending').length,
       flags: st.flags.slice(0, 100), journal: st.journal.slice(0, 100), rules: st.rules, needs: dedupe(needs),
-      universe: universeList(st, { sort: 'points' }),
+      // Only the stocks the screens show from the snapshot (baskets, orders, flags) plus Home's short lists.
+      // Explore, search and the pickers page through get_universe instead.
+      universe: snapshotUniverse(st), universeCount: Object.keys(st.universe).length, themeCounts: themeCounts(st), sectors: sectorCounts(st).map(x => x.name),
+      highlights: highlights(st),
       decisions: st.decisions.slice(0, 80).map(d => ({ ...d, name: d.symbol ? st.universe[d.symbol]?.name || NAMES[d.symbol] || d.symbol : 'Whole basket' })),
       flagsThisMonth: st.flags.filter(f => monthKey(f.date) === monthKey(st.clock) && f.status !== 'withdrawn').length,
       nextFiling: st.filings.find(f => !f.applied) || null, notif: st.notif, eventsCount: st.events.length,
       onboarded: st.onboarded, claudeConnected: st.claudeConnected, lastClaudeCall: st.lastClaudeCall,
       activity: activityView(st, recentActivity(st)), todo: todoList(st),
-      provider: 'Mock provider (seeded from NSE closes, 9 Nov 2026)', stages: STAGES, themes: THEMES, defaultLimits: DEFAULT_LIMITS,
+      provider: 'Real NSE prices (closes of 9 Nov 2026), simulated daily moves after that', stages: STAGES, themes: THEMES, defaultLimits: DEFAULT_LIMITS,
     };
   },
   get_stock(st, a) {
@@ -1218,7 +1308,10 @@ const OPS = {
     const u = st.universe[sym];
     return {
       stock: stockView(st, sym, b), rules: ruleLines(st, b, sym), basketId: b?.id || null, basketName: b?.name || null, theme: b?.theme || null,
-      history: (PRICE_HISTORY[sym] || []).slice(-36), lossAgo: u.lossAgo || [], themes: u.themes, isCustom: u.source !== 'default',
+      history: (PRICE_HISTORY[sym] || []).slice(-37), historyReal: HAS_REAL_HISTORY(sym) && (PRICE_HISTORY[sym] || []).length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(PRICE_HISTORY[sym].at(-1)?.t || ''),
+      lossAgo: u.lossAgo || [], themes: u.themes, themeLabels: Object.keys(u.themes || {}).map(t => ({ id: t, label: THEME_LABEL[t] || t, share: u.themes[t] })), isCustom: u.source !== 'default',
+      sampleMetrics: (u.mock || []).filter(id => !(u.na || []).includes(id)), firstTraded: REAL_FIRST_DAY[sym] || null,
+      addBlocks: Object.fromEntries(st.baskets.filter(x => x.kind === 'model' && !x.symbols.includes(sym)).map(x => [x.id, addBlockFor(st, x, sym)])),
       flags: st.flags.filter(f => f.symbol === sym), orders: st.orders.filter(o => o.symbol === sym).slice(0, 10),
       inBaskets: st.baskets.filter(x => x.symbols.includes(sym)).map(x => ({ id: x.id, name: x.name, qty: x.holdings[sym]?.qty || 0 })),
     };
@@ -1353,6 +1446,24 @@ function basketBacktest(st, b) {
 }
 function statusesSnapshot(st, b) { return Object.fromEntries(candidatesFor(st, b).map(u => [u.symbol, scoreIn(st, b, u.symbol).status])); }
 function diffStatuses(a, b) { return Object.keys(b).filter(k => a[k] !== b[k]).map(k => ({ symbol: k, from: a[k], to: b[k] })); }
+function snapshotUniverse(st) {
+  const syms = new Set();
+  for (const b of st.baskets) for (const s of b.symbols) syms.add(s);
+  for (const o of st.orders.slice(0, 150)) syms.add(o.symbol);
+  for (const f of st.flags) if (f.status === 'open') syms.add(f.symbol);
+  return [...syms].filter(s => st.universe[s]).map(s => tile(st, st.universe[s], scoreStock(st.universe[s], st.rules)));
+}
+// Home: today's biggest gainers and losers, and the best-rated stocks, by the current default rules.
+function highlights(st) {
+  const all = Object.values(st.universe).map(u => tile(st, u, scoreStock(u, st.rules)));
+  const by = f => [...all].sort(f).slice(0, 10);
+  const liquid = all.filter(x => (st.universe[x.symbol].metrics.adtv ?? 0) >= 10);
+  return {
+    gainers: by((a, b) => b.changePct - a.changePct), losers: by((a, b) => a.changePct - b.changePct),
+    pass: liquid.filter(x => x.status === 'pass').sort((a, b) => a.points - b.points || (st.universe[b.symbol].metrics.adtv || 0) - (st.universe[a.symbol].metrics.adtv || 0)).slice(0, 10),
+    ratings: all.reduce((n, x) => { n[x.status]++; return n; }, { pass: 0, watch: 0, remove: 0 }),
+  };
+}
 function dedupe(list) { const seen = new Set(); return list.filter(x => (seen.has(x.symbol) ? false : seen.add(x.symbol))); }
 
 export const OP_NAMES = Object.keys(OPS);

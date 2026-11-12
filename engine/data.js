@@ -1,9 +1,16 @@
-// Mock data: 55 NSE symbols across two themes (AC value chain, Energy). Symbols verified on NSE;
-// prices and day changes seeded from closes on 9 Nov 2026. Every metric, filing, history value and
-// return is MOCK. AC data is shaped after the user's research doc so statuses and yearly group
-// averages match it; Energy data is generated (seeded) so it's stable between runs.
+// Stock data. 55 original NSE symbols across two themes (AC value chain, Energy) plus ~605 more real, listed NSE
+// equities (engine/universe.js) across 13 themes. Prices and day changes are real NSE closes of 9 Nov 2026.
+// Price history and yearly returns are REAL (engine/realhistory.js, NSE bhavcopies 2018-2026, split/bonus adjusted).
+// Rule metrics: real where engine/universe.js has them (price-based ones from NSE data, fundamentals from public
+// screener.in pages); every other value is generated (seeded, so stable between runs) and marked mock per stock.
+// AC data stays shaped after the user's research doc so its statuses and the past-test story match it;
+// the June snapshots of rule metrics used by the past test are generated too (returns are real).
 
 import { DEFAULT_RULES } from './rules.js';
+import { THEMES, STAGES } from './themes.js';
+import { MORE_STOCKS, EXTRA_THEMES, ORIG_REAL } from './universe.js';
+import { REAL_DATES, REAL_NIFTY, REAL_FIRST, REAL_PX } from './realhistory.js';
+export { THEMES, STAGES };
 
 export function rng(seedStr) {
   let h = 1779033703 ^ seedStr.length;
@@ -16,24 +23,6 @@ export function rng(seedStr) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-
-export const THEMES = [
-  { id: 'ac', label: 'AC value chain' },
-  { id: 'energy', label: 'Energy' },
-];
-
-// Segments: value-chain stage for AC, industry for Energy. Basket "per segment" caps use these.
-export const STAGES = [
-  { id: 'raw', label: 'Raw materials', theme: 'ac' },
-  { id: 'parts', label: 'Parts & makers', theme: 'ac' },
-  { id: 'brands', label: 'Brands', theme: 'ac' },
-  { id: 'commercial', label: 'Commercial', theme: 'ac' },
-  { id: 'retail', label: 'Retail', theme: 'ac' },
-  { id: 'oilgas', label: 'Oil & gas', theme: 'energy' },
-  { id: 'power', label: 'Power', theme: 'energy' },
-  { id: 'renew', label: 'Renewables', theme: 'energy' },
-  { id: 'coal', label: 'Coal & mining', theme: 'energy' },
-];
 
 // symbol, name, sector, segment, theme share {theme: %}, first June in history, price, prev close,
 // today's profile (red / amber metrics), loss years ago (0 = latest year), history years
@@ -101,8 +90,31 @@ export const STOCKS = [
   S('COALINDIA', 'Coal India', 'Energy', 'coal', { energy: 100 }, 2018, 401.5, 401.0, [], [], []),
 ];
 
-export const NIFTY_SEED = 25600;
-export const NIFTY_PREV = 25510;
+// ---------- the wider universe (real NSE equities) ----------
+const JUNES = REAL_DATES.junes.map(d => +d.slice(0, 4)); // 2018 … 2026
+const firstYear = first => { const i = REAL_DATES.junes.findIndex(d => d >= first); return i < 0 ? 2027 : JUNES[i]; };
+const parseThemes = t => Object.fromEntries(t.split(' ').filter(Boolean).map(x => { const [k, v] = x.split(':'); return [k, +v]; }));
+export const NEW_STOCKS = MORE_STOCKS.map(([symbol, name, sector, stage, themes, price, prev, first, historyYears, real, lossAgo, lender]) =>
+  ({ symbol, name, sector, stage, themes: parseThemes(themes), from: firstYear(first), price, prev, historyYears, real, lossAgo, lender: !!lender, isNew: true }));
+export const ALL_STOCKS = [...STOCKS, ...NEW_STOCKS];
+
+// Real adjusted closes: on the first trading day of each June (2018 … 2026), and of each of the last 36 months.
+const PX = {};
+for (const [sym, v] of Object.entries(REAL_PX)) {
+  const [j, m] = v.split('|').map(x => x.split(',').map(n => (n === '' ? null : +n)));
+  PX[sym] = { j, m };
+}
+// Real June-to-June return in %, or null when the stock wasn't listed (or didn't trade) on both dates.
+export function realNext12(sym, year) {
+  const p = PX[sym]; const i = JUNES.indexOf(year);
+  if (!p || i < 0 || !p.j[i] || !p.j[i + 1]) return null;
+  return Math.round((p.j[i + 1] / p.j[i] - 1) * 1000) / 10;
+}
+export const HAS_REAL_HISTORY = sym => !!PX[sym];
+export const REAL_FIRST_DAY = REAL_FIRST;
+
+export const NIFTY_SEED = REAL_NIFTY.months.at(-1); // Nifty 50 close, 9 Nov 2026
+export const NIFTY_PREV = 25030.35; // 6 Nov 2026
 
 // ---------- metric generation ----------
 function sampleValue(rule, bandName, r) {
@@ -127,7 +139,8 @@ export function genMetrics(profile, r) {
 
 // ---------- history (June snapshots 2018–2025) ----------
 export const YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025];
-const NIFTY_TRI = { 2018: 11, 2019: -12, 2020: 55, 2021: 2, 2022: 23, 2023: 27, 2024: 8, 2025: -6 };
+// Nifty 50 June-to-June return + its dividend yield (≈ total return index), real.
+const NIFTY_TRI = REAL_NIFTY.tr;
 const KEPT_AVG = { 2018: 26, 2019: 27, 2020: 68, 2021: 22, 2022: 6, 2023: 56, 2024: 21, 2025: 26 };
 const REMOVED_AVG = { 2018: -29, 2019: -30, 2020: 179, 2021: 17, 2022: 98, 2023: 116, 2024: 11, 2025: 23 };
 const REMOVED_BEAT = { 2018: 1, 2019: 4, 2020: 10, 2021: 8, 2022: 11, 2023: 9, 2024: 4, 2025: 3 };
@@ -193,7 +206,8 @@ function fitMean(values, fixed, target, nifty, beatFlags) {
   }
   return values.map(v => Math.round(v * 10) / 10);
 }
-const themesOf = st => st.themes;
+const themesOf = st => ({ ...st.themes, ...(EXTRA_THEMES[st.symbol] || {}) });
+const alsoIn = (st, main) => Object.keys(themesOf(st)).filter(t => t !== main);
 
 export function buildHistory() {
   const hist = {};
@@ -206,7 +220,7 @@ export function buildHistory() {
       if (!eligible(st, y)) continue;
       const cls = st.themes.ac < 20 ? 'lowac' : P.includes(st.symbol) ? 'pass' : W.includes(st.symbol) ? 'watch' : 'removed';
       const histYears = (st.symbol === 'KRN' || st.symbol === 'KSHINTL') ? 1 : 10;
-      rows.push({ symbol: st.symbol, theme: 'ac', cls, metrics: genMetrics(profileFor(cls, st.symbol, r), r), themes: themesOf(st), historyYears: histYears, next12: 0 });
+      rows.push({ symbol: st.symbol, theme: 'ac', alsoIn: alsoIn(st, 'ac'), cls, metrics: genMetrics(profileFor(cls, st.symbol, r), r), themes: themesOf(st), historyYears: histYears, next12: 0 });
     }
     const nifty = NIFTY_TRI[y];
     const ac = rows;
@@ -237,12 +251,30 @@ export function buildHistory() {
       const spread = cls === 'removed' ? 70 : 40;
       let ret = nifty + bias + (re() - 0.5) * spread;
       if (cls === 'removed' && re() < 0.12) ret += 80 + re() * 120; // the odd risky winner
-      rows.push({ symbol: st.symbol, theme: 'energy', cls, metrics: genMetrics(profileFor(cls, st.symbol, re), re), themes: themesOf(st), historyYears: 10, next12: Math.round(Math.max(-90, ret) * 10) / 10 });
+      rows.push({ symbol: st.symbol, theme: 'energy', alsoIn: alsoIn(st, 'energy'), cls, metrics: genMetrics(profileFor(cls, st.symbol, re), re), themes: themesOf(st), historyYears: 10, next12: Math.round(Math.max(-90, ret) * 10) / 10 });
+    }
+    // The real June-to-June return replaces the shaped one wherever NSE data has both Junes.
+    for (const x of rows) { const real = realNext12(x.symbol, y); if (real != null) { x.next12 = real; x.real = true; } }
+    // The wider universe: a seeded June snapshot of the rule metrics, and the real return of the next 12 months.
+    for (const st of NEW_STOCKS) {
+      const next12 = realNext12(st.symbol, y);
+      if (st.from > y || next12 == null) continue;
+      const rr = rng('hist' + y + st.symbol);
+      const u = rr();
+      const cls = u < 0.5 ? 'pass' : u < 0.8 ? 'watch' : 'removed';
+      const metrics = genMetrics(profileFor(cls, st.symbol, rr), rr);
+      const main = STAGE_THEME[st.stage] && st.themes[STAGE_THEME[st.stage]] != null ? STAGE_THEME[st.stage] : Object.keys(st.themes)[0];
+      const listedYears = Math.round(Math.min(10, (Date.parse(REAL_DATES.junes[JUNES.indexOf(y)]) - Date.parse(REAL_FIRST[st.symbol] || '2018-01-01')) / 31557600000) * 10) / 10;
+      rows.push({ symbol: st.symbol, theme: main, alsoIn: Object.keys(st.themes).filter(t => t !== main), cls, metrics, na: st.lender ? LENDER_NA : undefined, themes: st.themes, historyYears: Math.max(listedYears, 0.1), next12, real: true });
     }
     hist[y] = rows;
   }
   return { years: YEARS, rows: hist, nifty: NIFTY_TRI };
 }
+
+const STAGE_THEME = Object.fromEntries(STAGES.map(x => [x.id, x.theme]));
+// Banks and other lenders: debt/equity, interest cover and profit-to-cash don't mean the same for them, so those rules don't apply.
+export const LENDER_NA = ['de', 'icr', 'cash'];
 
 function monthLabel(y, m) { const t = y * 12 + 5 + m; return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`; }
 
@@ -264,12 +296,21 @@ export function buildPriceHistory(history) {
     }
     return pts.reverse();
   };
-  for (const st of STOCKS) {
+  // Real monthly closes (last 36 months, then the latest day) when NSE data matches today's price; else a seeded series.
+  const label = (d, i, n) => (i === n - 1 ? d : d.slice(0, 7));
+  const real = (seedPrice, m) => {
+    if (!m || !m.at(-1) || Math.abs(m.at(-1) / seedPrice - 1) > 0.05) return null;
+    const n = m.length;
+    return m.map((p, i) => (p ? { t: label(REAL_DATES.months[i], i, n), p } : null)).filter(Boolean);
+  };
+  for (const st of ALL_STOCKS) {
     if (st.delisted) continue;
+    const pts = real(st.price, PX[st.symbol]?.m);
+    if (pts) { out[st.symbol] = pts; continue; }
     const r = rng('px' + st.symbol);
     out[st.symbol] = series(st.price, y => { const row = history.rows[y].find(x => x.symbol === st.symbol); return row ? row.next12 : null; }, r);
   }
-  out.NIFTY = series(NIFTY_SEED, y => NIFTY_TRI[y], rng('nifty'));
+  out.NIFTY = REAL_NIFTY.months.map((p, i, a) => ({ t: label(REAL_DATES.months[i], i, a.length), p }));
   return out;
 }
 
@@ -286,6 +327,26 @@ function lossAgoFor(st, lossMetric) {
   return Array.from({ length: lossMetric }, (_, i) => i); // most recent years first
 }
 
+// Mock values for a new stock where no real number was found: shaped by sector and kind of company.
+const PSU = new Set('SBIN BANKBARODA BANKINDIA MAHABANK CANBK CENTRALBK INDIANB IOB PNB UCOBANK UNIONBANK IDBI LICI GICRE NIACL PFC RECLTD IRFC IREDA HUDCO IFCI BEL HAL BDL BEML MIDHANI COCHINSHIP GRSE MAZDOCK RVNL IRCON RITES IRCTC RAILTEL CONCOR NBCC ENGINERSIN BHEL NMDC NSLNISP SAIL NATIONALUM HINDCOPPER MOIL GMDCLTD GAIL CHENNPETRO MRPL NTPCGREEN SJVN NHPC NLCINDIA COALINDIA BHARATCOAL CMPDI SCI MMTC ITI HFCL FACT GNFC KIOCL HINDZINC'.split(' '));
+function mockFor(st, id, r) {
+  const u = r();
+  if (id === 'pledge') { // most owners pledge nothing; a few pledge a lot
+    if (PSU.has(st.symbol) || u < 0.82) return 0;
+    if (u < 0.93) return Math.round(r() * 1000) / 100;
+    if (u < 0.97) return Math.round((10 + r() * 15) * 100) / 100;
+    return Math.round((25 + r() * 30) * 100) / 100;
+  }
+  if (id === 'loss') return u < 0.9 ? 0 : 1;
+  let pGreen = 0.8, pRed = 0.04;
+  if (st.sector === 'IT' && (id === 'de' || id === 'roe' || id === 'icr')) { pGreen = 0.9; pRed = 0.02; }
+  if (PSU.has(st.symbol) && (id === 'pe' || id === 'peg')) { pGreen = 0.85; pRed = 0.03; }
+  if ((st.real?.adtv ?? 100) < 10 && (id === 'margin' || id === 'cash')) { pGreen = 0.5; pRed = 0.15; }
+  const band = u < pGreen ? 'green' : u < 1 - pRed ? 'amber' : 'red';
+  return sampleValue(DEFAULT_RULES.find(x => x.id === id), band, r);
+}
+const METRIC_IDS = DEFAULT_RULES.map(x => x.id);
+
 export function buildUniverse() {
   const u = {};
   for (const st of STOCKS) {
@@ -293,14 +354,42 @@ export function buildUniverse() {
     const r = rng('today' + st.symbol);
     const metrics = genMetrics({ red: st.red, amber: st.amber }, r);
     if (st.lossAgo) metrics.loss = st.lossAgo.filter(a => a < 5).length;
+    let mock = [...METRIC_IDS], lossAgo = lossAgoFor(st, metrics.loss);
+    // Energy names: real numbers replace the generated ones wherever they exist. AC names keep the values
+    // shaped after the user's research doc (their story and the past test depend on them), all marked mock.
+    const real = ORIG_REAL[st.symbol];
+    if (real && st.themes.energy != null) {
+      Object.assign(metrics, real[0]);
+      mock = mock.filter(id => real[0][id] == null);
+      if (real[1]) lossAgo = real[1];
+    }
     u[st.symbol] = {
-      symbol: st.symbol, name: st.name, sector: st.sector, stage: st.stage, themes: { ...st.themes },
-      historyYears: st.historyYears, metrics, lossAgo: lossAgoFor(st, metrics.loss), events: {}, source: 'default',
+      symbol: st.symbol, name: st.name, sector: st.sector, stage: st.stage, themes: themesOf(st),
+      historyYears: st.historyYears, metrics, lossAgo, events: {}, source: 'default', mock,
     };
   }
-  u.PRECWIRE.metrics.de = 0.82; // demo story: amber before the September filing
+  // Demo story: the 14 Oct results push Precision Wires' debt up. It starts from its real debt/equity.
+  u.PRECWIRE.metrics.de = ORIG_REAL.PRECWIRE?.[0].de ?? 0.82;
+  if (ORIG_REAL.PRECWIRE?.[0].de != null) u.PRECWIRE.mock = u.PRECWIRE.mock.filter(x => x !== 'de');
+  for (const st of NEW_STOCKS) {
+    const r = rng('today' + st.symbol);
+    const metrics = {}; const mock = [];
+    const na = st.lender ? LENDER_NA : [];
+    for (const id of METRIC_IDS) {
+      const v = mockFor(st, id, r); // always drawn, so the seeded sequence doesn't depend on which values are real
+      if (na.includes(id)) { metrics[id] = null; continue; }
+      if (st.real[id] != null) metrics[id] = st.real[id];
+      else { metrics[id] = v; mock.push(id); }
+    }
+    const lossAgo = st.lossAgo || Array.from({ length: metrics.loss || 0 }, (_, i) => i);
+    u[st.symbol] = {
+      symbol: st.symbol, name: st.name, sector: st.sector, stage: st.stage, themes: { ...st.themes },
+      historyYears: st.historyYears, metrics, lossAgo, events: {}, source: 'default', mock, ...(na.length ? { na } : {}),
+    };
+  }
   return u;
 }
 
-export const SEED_PRICES = Object.fromEntries(STOCKS.filter(s => !s.delisted).map(s => [s.symbol, s.price]));
-export const SEED_PREV = Object.fromEntries(STOCKS.filter(s => !s.delisted).map(s => [s.symbol, s.prev]));
+export const SEED_PRICES = Object.fromEntries(ALL_STOCKS.filter(s => !s.delisted).map(s => [s.symbol, s.price]));
+export const SEED_PREV = Object.fromEntries(ALL_STOCKS.filter(s => !s.delisted).map(s => [s.symbol, s.prev]));
+export const BASE_SYMBOLS = Object.keys(SEED_PRICES);

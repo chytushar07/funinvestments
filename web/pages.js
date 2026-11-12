@@ -2,7 +2,7 @@
 import { html, useState, useEffect, useRef } from './vendor/preact-htm.js';
 import { store, act, read, go, goSheet, openSheet, copy, toast, confirmDialog, deleteAlert, clearAlerts } from './store.js';
 import * as api from './client.js';
-import { inr, inr2, pct, cls, short, dateLabel, shortName, STATUS, Pill, Src, Avatar, Mock, Chg, I, Sparkline, Stepper, Switch, ProLock, Empty, ruleLimits } from './lib.js';
+import { inr, inr2, pct, cls, short, dateLabel, shortName, STATUS, Pill, Src, Avatar, Mock, Chg, I, Sparkline, Stepper, Switch, ProLock, Empty, ruleLimits, useUniverse, ShowMore } from './lib.js';
 import { Info } from './glossary.js';
 import { exitBasket, deleteBasket } from './sheets.js';
 import { startTour, tourSeen } from './tour.js';
@@ -75,11 +75,10 @@ export function Activity() {
 
 const byPoints = (a, b) => ({ pass: 0, watch: 1, remove: 2 }[a.status] - { pass: 0, watch: 1, remove: 2 }[b.status]) || a.points - b.points;
 export const explore = { q: '', sector: '', status: '', theme: '', profitable: false, sort: 'points', focus: false };
+const homeTheme = { id: 'energy' };
 const basketTab = {};
 const stageLabel = id => store.S.stages.find(s => s.id === id)?.label || id;
 const stageColor = id => `var(--s-${id})`;
-// In a theme context (AC, Energy) show the status with that theme's share rule applied.
-const themed = (list, theme) => list.map(x => (theme && x.byTheme?.[theme] ? { ...x, status: x.byTheme[theme].status, points: x.byTheme[theme].points } : x));
 
 // ---------- shared pieces ----------
 export function StockTile({ s }) {
@@ -88,10 +87,11 @@ export function StockTile({ s }) {
     <div class="nm">${s.name}</div>
     <div><div class="price">${inr2(s.price)}</div><${Chg} v=${s.changePct}/></div></button>`;
 }
-function HRow({ title, sub, items, onAll, right, info, tour }) {
+function HRow({ title, sub, items, onAll, right, info, tour, below }) {
   return html`<section class="section" data-tour=${tour}>
     <div class="section-head"><div><h2>${title}${info ? html` <${Info} k=${info}/>` : null}</h2>${sub && html`<div class="faint" style="font-size:12.5px;margin-top:2px">${sub}</div>`}</div>${right || html`<button class="linkbtn" onClick=${onAll}>See all</button>`}</div>
-    <div class="hscroll">${items.map(s => html`<${StockTile} key=${s.symbol} s=${s}/>`)}
+    ${below}
+    <div class="hscroll">${items === null ? [0, 1, 2].map(i => html`<div key=${i} class="tile-s sk"></div>`) : items.map(s => html`<${StockTile} key=${s.symbol} s=${s}/>`)}
       <button class="tile-s more" onClick=${onAll}><span class="plus">${I.chev}</span>See all</button></div></section>`;
 }
 function seeAll(patch) { Object.assign(explore, { q: '', sector: '', status: '', theme: '', profitable: false, sort: 'points', focus: false }, patch); go('explore'); }
@@ -129,11 +129,12 @@ const PROMPTS = [
 export function Home() {
   const S = store.S;
   const [mov, setMov] = useState('gainers');
-  const U = S.universe;
-  const movers = [...U].sort((a, b) => (mov === 'gainers' ? b.changePct - a.changePct : a.changePct - b.changePct)).slice(0, 10);
-  const energy = themed(U.filter(x => x.themes?.energy != null), 'energy').sort(byPoints).slice(0, 10);
-  const ac = themed(U.filter(x => x.themes?.ac != null), 'ac').sort(byPoints).slice(0, 10);
-  const passing = U.filter(x => x.status === 'pass').sort((a, b) => a.points - b.points).slice(0, 10);
+  const [th, setTh] = useState(homeTheme.id);
+  const H = S.highlights || {};
+  const movers = (mov === 'gainers' ? H.gainers : H.losers) || [];
+  const themeRow = useUniverse({ theme: th, sort: 'points' }, { page: 10 });
+  const passing = H.pass || [];
+  const thLabel = S.themes.find(t => t.id === th)?.label || th;
   const models = S.baskets;
   const total = S.cash + S.baskets.filter(b => b.kind === 'model').reduce((t, b) => t + b.value, 0);
   const usedClaude = S.claudeConnected && (S.activity || []).some(a => a.actor === 'claude' && a.kind !== 'read'); // already built something with Claude: no how-to line needed
@@ -141,7 +142,7 @@ export function Home() {
     <${PlanSwitch} home/>
     <${NextStep}/>
     ${!tourSeen() && S.baskets.length === 0 && !S.todo?.length && html`<div class="card tour-invite"><div><b>New here?</b><div class="muted" style="font-size:13px">Take the 1-minute tour.</div></div><button class="btn small primary" onClick=${startTour}>Start tour</button></div>`}
-    <button class="searchbar" data-tour="search" onClick=${() => seeAll({ focus: true })}>${I.search}<span>Search ${U.length} stocks</span></button>
+    <button class="searchbar" data-tour="search" onClick=${() => seeAll({ focus: true })}>${I.search}<span>Search ${S.universeCount} stocks</span></button>
     ${models.length ? html`<section class="section">
       <div class="section-head"><div><h2>Your baskets</h2><div class="faint num" style="font-size:12.5px;margin-top:2px">Practice portfolio ${inr(total)} · cash ${inr(S.cash)}</div></div><button class="linkbtn" onClick=${() => go('baskets')}>See all</button></div>
       <div class="hscroll">${models.map(b => html`<div class="hb" key=${b.id}><${BasketCard} b=${b} compact/></div>`)}
@@ -154,8 +155,8 @@ export function Home() {
     <${RecentActivity}/>
     <${HRow} tour="movers" title="Top movers today" items=${movers} onAll=${() => seeAll({ sort: mov })}
       right=${html`<div class="seg small">${[['gainers', 'Gainers'], ['losers', 'Losers']].map(([v, l]) => html`<button key=${v} class=${mov === v ? 'on' : ''} onClick=${() => setMov(v)}>${l}</button>`)}</div>`}/>
-    <${HRow} title="Energy" sub="Oil & gas · power · renewables · coal" items=${energy} onAll=${() => seeAll({ theme: 'energy' })}/>
-    <${HRow} title="AC value chain" items=${ac} onAll=${() => seeAll({ theme: 'ac' })}/>
+    <${HRow} title=${`Themes · ${thLabel}`} sub=${S.stages.filter(x => x.theme === th).map(x => x.label).join(' · ')} items=${themeRow.data ? themeRow.list.slice(0, 10) : null} onAll=${() => seeAll({ theme: th })}
+      below=${html`<div class="chips" style="margin:-4px 0 10px">${S.themes.map(t => html`<button key=${t.id} class="chip ${th === t.id ? 'on' : ''}" aria-pressed=${th === t.id} onClick=${() => { homeTheme.id = t.id; setTh(t.id); }}>${t.label}</button>`)}</div>`}/>
     <${HRow} title="Rated Buy by the default rules" info="status" items=${passing} onAll=${() => seeAll({ status: 'pass' })}/>
 
     <section class="section" id="with-claude" data-tour="claude">
@@ -174,13 +175,9 @@ export function Explore() {
   const inputRef = useRef();
   useEffect(() => { if (explore.focus) { inputRef.current?.focus(); explore.focus = false; } }, []);
   const upd = patch => { Object.assign(explore, patch); setV(v => v + 1); };
-  const sectors = [...new Set(S.universe.map(x => x.sector))].sort();
-  const q = explore.q.trim().toLowerCase();
-  let list = themed(S.universe, explore.theme).filter(x => !q || x.name.toLowerCase().includes(q) || x.symbol.toLowerCase().includes(q) || x.sector.toLowerCase().includes(q))
-    .filter(x => !explore.sector || x.sector === explore.sector).filter(x => !explore.theme || x.themes?.[explore.theme] != null)
-    .filter(x => !explore.status || x.status === explore.status).filter(x => !explore.profitable || x.profitableYears >= 2);
-  const sorts = { points: byPoints, gainers: (a, b) => b.changePct - a.changePct, losers: (a, b) => a.changePct - b.changePct, name: (a, b) => a.name.localeCompare(b.name) };
-  list = [...list].sort(sorts[explore.sort] || byPoints);
+  const sectors = S.sectors || [];
+  const u = useUniverse({ q: explore.q.trim() || undefined, theme: explore.theme || undefined, sector: explore.sector || undefined, status: explore.status || undefined, profitable_years: explore.profitable ? 2 : undefined, sort: explore.sort });
+  const list = u.list;
   const toggle = sym => { const n = new Set(sel); n.has(sym) ? n.delete(sym) : n.add(sym); setSel(n); };
   return html`<div>
     <div class="row between" style="margin-top:4px"><h1>Explore</h1><div class="row" style="gap:8px">
@@ -194,15 +191,15 @@ export function Explore() {
     <div class="chips" style="margin-top:8px">
       ${[['', 'Any rating'], ['pass', '✓ Buy'], ['watch', '= Hold'], ['remove', '✕ Sell']].map(([v, l]) => html`<button key=${'s' + v} class="chip ${explore.status === v ? 'on' : ''}" onClick=${() => upd({ status: v })}>${l}</button>`)}
       <select class="chip select" aria-label="Sector" value=${explore.sector} onChange=${e => upd({ sector: e.target.value })}><option value="">All sectors</option>${sectors.map(s => html`<option key=${s} value=${s}>${s}</option>`)}</select>
-      <select class="chip select" aria-label="Sort" value=${explore.sort} onChange=${e => upd({ sort: e.target.value })}><option value="points">Sort: rules</option><option value="gainers">Sort: gainers</option><option value="losers">Sort: losers</option><option value="name">Sort: A–Z</option></select>
+      <select class="chip select" aria-label="Sort" value=${explore.sort} onChange=${e => upd({ sort: e.target.value })}><option value="points">Sort: rules</option><option value="gainers">Sort: gainers</option><option value="losers">Sort: losers</option><option value="liquid">Sort: most traded</option><option value="name">Sort: A–Z</option></select>
     </div>
-    <div class="row between" style="margin-top:12px"><span class="muted" style="font-size:13px">${list.length} stock${list.length === 1 ? '' : 's'} · checked with the default rules${explore.theme ? ' and theme share' : ''} <${Info} k="status"/></span><${Mock}/></div>
+    <div class="row between" style="margin-top:12px"><span class="muted" style="font-size:13px">${u.count == null ? 'Loading…' : `${u.count} of ${S.universeCount} stock${u.count === 1 ? '' : 's'}`} · rated by your default rules${explore.theme ? ' and theme share' : ''} <${Info} k="status"/></span><${Mock}/></div>
     ${list.length ? html`<div class="grid2" style="margin-top:10px">${list.map(s => sel
       ? html`<button key=${s.symbol} class="scard ${sel.has(s.symbol) ? 'picked' : ''}" aria-pressed=${sel.has(s.symbol)} onClick=${() => toggle(s.symbol)}>
           <div class="row between"><${Avatar} name=${s.name} stage=${s.stage}/><span class="check">${sel.has(s.symbol) ? '✓' : ''}</span></div>
           <div class="nm">${s.name}</div><div class="row between"><${Pill} s=${s.status}/><span class="pts">${warn(s.points)}</span></div></button>`
-      : html`<${StockCard} key=${s.symbol} s=${s}/>`)}</div>`
-    : html`<${Empty} title="No stocks match"><span class="muted">Clear a filter or add a stock.</span><button class="btn small" onClick=${() => upd({ q: '', sector: '', status: '', theme: '', profitable: false })}>Clear filters</button></${Empty}>`}
+      : html`<${StockCard} key=${s.symbol} s=${s}/>`)}</div><${ShowMore} u=${u}/>`
+    : u.loading ? html`<div class="grid2" style="margin-top:10px">${[0, 1, 2, 3].map(i => html`<div key=${i} class="scard sk" style="height:120px"></div>`)}</div>` : html`<${Empty} title="No stocks match"><span class="muted">Clear a filter or add a stock.</span><button class="btn small" onClick=${() => upd({ q: '', sector: '', status: '', theme: '', profitable: false })}>Clear filters</button></${Empty}>`}
     ${sel && html`<div class="selectbar"><span><b>${sel.size}</b> selected</span><button class="btn primary" disabled=${!sel.size} onClick=${() => { newBasket({ preset: [...sel] }); }}>Create basket</button></div>`}
   </div>`;
 }
@@ -235,7 +232,7 @@ export function Stock({ symbol }) {
       <div class="row between"><span class="row" style="gap:6px"><${Pill} s=${s.liveStatus}/><${Info} k="status"/></span><span class="pts">${warn(s.points)} · ${d.basketName ? `rules of ${d.basketName}` : 'default rules'}</span></div>
       ${!/^(No warnings|\d+ warnings?)$/.test(s.reasons.join(' · ')) && html`<div class="muted" style="font-size:13px">${s.reasons.join(' · ')}</div>`}
       <${Sparkline} pts=${d.history}/>
-      <div class="row between faint" style="font-size:11.5px"><span>${d.history[0]?.t || ''}</span><span>Profit in ${s.profitableYears === 5 ? 'all 5' : s.profitableYears} of the last 5 years · mock</span></div>
+      <div class="row between faint" style="font-size:11.5px"><span>${d.history[0]?.t || ''}</span><span>${d.historyReal ? 'NSE closes' : html`<span class="sample" title="Made-up stand-in: no real price history for this stock">sample chart</span>`} · profit in ${s.profitableYears === 5 ? 'all 5' : s.profitableYears} of the last 5 years${d.sampleMetrics?.includes('loss') ? ' (sample)' : ''}</span></div>
     </div>
     <div class="row wrap" data-tour="actions" style="margin-top:14px;gap:8px">
       <button class="btn primary" style="flex:2" onClick=${() => openSheet({ type: 'addto', symbol: s.symbol, name: s.name })}>Add to basket</button>
@@ -248,8 +245,9 @@ export function Stock({ symbol }) {
       <button class="btn small ghost" onClick=${() => openSheet({ type: 'flag', symbol: s.symbol, name: s.name, flag: f })}>Edit</button>
       <button class="btn small ghost" onClick=${() => confirmDialog({ title: 'Withdraw this flag?', body: 'Any unconfirmed sell it drafted is cancelled.', confirm: 'Withdraw', danger: true, onConfirm: () => act('delete_news_flag', { flag_id: f.id }, { ok: 'Flag withdrawn' }) })}>Withdraw</button></div>`)}</div></section>`}
     <section class="section" data-tour="why"><div class="section-head"><h2>Why this status?</h2><span class="faint" style="font-size:12px">Good · bad · its number</span></div>
-      <div class="card list" style="padding:2px 16px">${d.rules.map(r => html`<div class="li" key=${r.id}><span class="dot ${r.band}" aria-label=${r.band}></span><span class="grow"><span class="t">${r.label}${r.critical ? html` <span class="star" title="Must-pass rule">★</span>` : ''} <${Info} k=${r.id}/></span><span class="s num">good ${r.green} · bad ${r.red}${r.enabled ? '' : ' · rule off'}</span></span><b class="num">${r.valueText}</b></div>`)}</div></section>
-    ${d.isCustom && html`<div class="row wrap" style="margin-top:14px;gap:8px"><button class="btn ghost" style="flex:1" onClick=${() => openSheet({ type: 'candidate', symbol: s.symbol })}>Edit stock</button>
+      <div class="card list" style="padding:2px 16px">${d.rules.map(r => html`<div class="li" key=${r.id}><span class="dot ${r.band}" aria-label=${r.band}></span><span class="grow"><span class="t">${r.label}${r.critical ? html` <span class="star" title="Must-pass rule">★</span>` : ''} <${Info} k=${r.id}/></span><span class="s num">${r.note || html`good ${r.green} · bad ${r.red}${r.enabled ? '' : ' · rule off'}`}</span></span><b class="num ${r.band === 'na' ? 'faint' : ''}">${r.valueText}${r.sample ? html`<span class="sample" title="Sample value: no real figure was found for this stock, so a made-up stand-in is used">sample</span>` : null}</b></div>`)}</div>
+      ${d.sampleMetrics?.length ? html`<span class="faint" style="font-size:12px">Values marked <span class="sample" style="margin:0">sample</span> are stand-ins where no real figure was found. The rest come from NSE trading data and company filings.</span>` : null}</section>
+    ${d.isCustom && html`<div class="row wrap" style="margin-top:14px;gap:8px"><button class="btn ghost" style="flex:1" onClick=${() => openSheet({ type: 'candidate', symbol: s.symbol, stock: { ...s, themes: d.themes } })}>Edit stock</button>
       <button class="btn ghost danger" style="flex:1" onClick=${() => confirmDialog({ title: `Delete ${s.symbol}?`, body: 'It leaves your universe. It must not be in any basket.', confirm: 'Delete', danger: true, onConfirm: async () => { const r = await act('delete_candidate', { symbol: s.symbol }, { ok: 'Deleted' }); if (r?.ok) go('explore'); } })}>Delete stock</button></div>`}
     ${d.orders.length > 0 && html`<section class="section"><h2>Orders</h2><div class="card list" style="padding:2px 16px">${d.orders.map(o => html`<${OrderRow} key=${o.id} o=${o}/>`)}</div></section>`}
   </div>`;
@@ -598,7 +596,7 @@ export function Account() {
       <div class="li"><span class="grow"><span class="t">One basket's rules</span><span class="s">Open the basket → ⚙ Edit rules</span></span><button class="linkbtn" onClick=${() => go('baskets')}>Baskets</button></div></div></section>
     <${Notifications}/>
     <section class="section"><h2>Demo</h2><div class="card stack" style="gap:10px">
-      <dl class="kv"><dt>Demo date <${Info} k="democlock"/></dt><dd>${dateLabel(S.clock)}</dd><dt>Next results</dt><dd>${S.nextFiling ? `${S.nextFiling.symbol} · ${short(S.nextFiling.date)}` : '—'}</dd><dt>Prices</dt><dd>Mock data</dd><dt>Saved</dt><dd>${server ? 'Online' : 'In this browser'}</dd></dl>
+      <dl class="kv"><dt>Demo date <${Info} k="democlock"/></dt><dd>${dateLabel(S.clock)}</dd><dt>Next results</dt><dd>${S.nextFiling ? `${S.nextFiling.symbol} · ${short(S.nextFiling.date)}` : '—'}</dd><dt>Prices</dt><dd>Real NSE closes, then practice moves</dd><dt>Saved</dt><dd>${server ? 'Online' : 'In this browser'}</dd></dl>
       ${server && api.getSpace() === 'private' && html`<div class="row between"><span>Your private space <${Info} k="privatespace"/></span><button class="btn small ghost" onClick=${() => copy(location.origin + location.pathname + '#key=' + S.user.apiKey)}>Copy link</button></div>`}
       <button class="btn small ghost danger" style="align-self:flex-start" onClick=${() => confirmDialog({ title: 'Start the demo over?', body: 'This erases every basket, order, alert, news flag and the activity log, and puts back ₹1,00,000 of practice money. It can\'t be undone.', confirm: 'Reset demo', danger: true, onConfirm: async () => { const r = await act('reset', {}, { ok: 'Demo reset · fresh start' }); if (r?.ok) go('home'); } })}>Reset demo</button></div></section>
   </div>`;

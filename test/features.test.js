@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createState, dispatch } from '../engine/core.js';
 
 const AC = ['SRF', 'NAVINFLUOR', 'HAVELLS', 'BLUESTARCO', 'KIRLPNU', 'PRECWIRE'];
-const EN = ['NTPC', 'TORNTPOWER', 'COALINDIA', 'PETRONET', 'OIL', 'PREMIERENE'];
+const EN = ['ADANIPOWER', 'WAAREEENER', 'COALINDIA', 'PETRONET', 'ONGC', 'PREMIERENE'];
 
 function invariants(st) {
   const fin = v => typeof v === 'number' && Number.isFinite(v);

@@ -10,7 +10,7 @@ import readline from 'node:readline';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createState, dispatch } from '../engine/core.js';
+import { createState, dispatch, packState, unpackState } from '../engine/core.js';
 import { mcpHandle } from '../engine/mcp.js';
 
 const URL_ = process.env.FI_URL || 'http://localhost:8787';
@@ -24,10 +24,10 @@ async function remote(msg) {
 }
 let local = null;
 function localHandle(msg) {
-  if (!local) { try { local = JSON.parse(fs.readFileSync(LOCAL_FILE, 'utf8')); } catch { local = createState(); } }
+  if (!local) { try { local = unpackState(JSON.parse(fs.readFileSync(LOCAL_FILE, 'utf8'))); } catch { local = createState(); } }
   const out = mcpHandle(msg, (name, args) => dispatch(local, name, args, 'claude'));
   fs.mkdirSync(path.dirname(LOCAL_FILE), { recursive: true });
-  fs.writeFileSync(LOCAL_FILE, JSON.stringify(local));
+  fs.writeFileSync(LOCAL_FILE, JSON.stringify(packState(local)));
   return out;
 }
 

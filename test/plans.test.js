@@ -26,7 +26,7 @@ test('Free: every Pro feature is blocked with a free alternative; basics work', 
 });
 
 test('Free: max 8 stocks a basket, Pro 12', () => {
-  const syms = ['SRF', 'NAVINFLUOR', 'FLUOROCHEM', 'HAVELLS', 'BLUESTARCO', 'KIRLPNU', 'PRECWIRE', 'VOLTAS', 'SUBROS', 'COALINDIA', 'PETRONET', 'OIL', 'NTPC', 'TORNTPOWER'];
+  const syms = ['SRF', 'NAVINFLUOR', 'FLUOROCHEM', 'HAVELLS', 'BLUESTARCO', 'KIRLPNU', 'PRECWIRE', 'VOLTAS', 'SUBROS', 'COALINDIA', 'PETRONET', 'OIL', 'ADANIPOWER', 'WAAREEENER'];
   const f = mk('free'); const fb = f.ok('create_basket', { name: 'F', symbols: syms }).basket;
   assert.ok(fb.count <= 8, `free ${fb.count}`);
   const p = mk('pro'); const pb = p.ok('create_basket', { name: 'P', symbols: syms }).basket;

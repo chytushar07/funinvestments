@@ -86,7 +86,7 @@ const track = () => html`
 
 // id, emoji, title, one line, glossary key for the "i", story, [link label, route]
 export const STORIES = [
-  { id: 'browse', e: '🔍', t: 'Browse and search', d: '55 stocks, each checked by 13 rules.', info: 'warnings', body: browse, link: ['Explore', 'explore'] },
+  { id: 'browse', e: '🔍', t: 'Browse and search', d: '660 real NSE stocks, each checked by 13 rules.', info: 'warnings', body: browse, link: ['Explore', 'explore'] },
   { id: 'build', e: '🧺', t: 'Build baskets', d: 'By hand, paste symbols, or ask Claude.', info: 'limits', body: build, link: ['Baskets', 'baskets'] },
   { id: 'watch', e: '🛡️', t: 'Rules watch every day', d: 'Each stock is rated Buy, Hold or Sell.', info: 'twice', body: watch, link: ['Alerts', 'alerts'] },
   { id: 'results', e: '📊', t: 'Results come out', d: 'New numbers re-check every stock.', info: 'results', body: results, link: ['Alerts', 'alerts'] },

@@ -5,7 +5,7 @@
 //   lost between Claude chats and nobody sees anyone else's baskets. The original owner key still opens the
 //   original shared space ("main"), so existing Claude connectors keep working.
 import { DurableObject } from 'cloudflare:workers';
-import { createState, dispatch } from '../engine/core.js';
+import { createState, dispatch, packState, unpackState } from '../engine/core.js';
 import { mcpHandle, keyFrom, sameKey, READ_OPS } from '../engine/mcp.js';
 import { mintKey, resolveSpace } from '../engine/keys.js';
 
@@ -24,7 +24,7 @@ export class Store extends DurableObject {
     this.key = key;
     const saved = await this.ctx.storage.get('state');
     const fresh = createState();
-    this.state = saved && saved.v === fresh.v ? saved : fresh;
+    this.state = saved && saved.v === fresh.v ? unpackState(saved) : fresh; // the stock universe comes from the shared module
     this.state.user.apiKey = key;
     this.rev = (await this.ctx.storage.get('rev')) || 1;
   }
@@ -35,7 +35,7 @@ export class Store extends DurableObject {
     if (!secret) { secret = randomKey() + randomKey(); await this.ctx.storage.put('secret', secret); }
     return { secret, legacyKey: this.key };
   }
-  async save() { this.rev++; await this.ctx.storage.put({ state: this.state, rev: this.rev }); }
+  async save() { this.rev++; await this.ctx.storage.put({ state: packState(this.state), rev: this.rev }); } // only this space's changes (< 128 KiB)
 
   async run(op, args, actor) {
     if (op === 'reset') { this.state = createState(); this.state.user.apiKey = this.key; await this.save(); return { ok: true, data: { reset: true } }; }

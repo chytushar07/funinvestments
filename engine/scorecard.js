@@ -9,7 +9,7 @@ const r1 = v => (v == null ? null : Math.round(v * 10) / 10);
 
 export function backtest(ruleSet, history, names = {}, opts = {}) {
   const { theme = null, minTheme, symbols = null } = opts;
-  const keep = row => (theme ? row.theme === theme : symbols ? symbols.has(row.symbol) || row.theme === opts.fallbackTheme : true);
+  const keep = row => (theme ? row.theme === theme || !!row.alsoIn?.includes(theme) : symbols ? symbols.has(row.symbol) || row.theme === opts.fallbackTheme : true);
   const years = [];
   const log = [];
   const ruleHits = {};
