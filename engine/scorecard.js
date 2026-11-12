@@ -55,7 +55,7 @@ export function backtest(ruleSet, history, names = {}, opts = {}) {
       id: r.id, label: r.label, critical: r.critical, removed: hits.length,
       worst: r1(worst?.ret), median: r1(median(rets)), best: r1(best?.ret),
       hitRate: hits.length ? Math.round((hits.filter(h => h.ret < h.nifty).length / hits.length) * 100) : null,
-      worstAvoided: worst ? { symbol: worst.symbol, name: names[worst.symbol] || worst.symbol, year: worst.year, ret: worst.ret } : null,
+      worstAvoided: worst ? { symbol: worst.symbol, name: names[worst.symbol] || worst.symbol, year: worst.year, ret: worst.ret, delisted: worst.ret <= -99.5 } : null,
       missedBest: best ? { symbol: best.symbol, name: names[best.symbol] || best.symbol, year: best.year, ret: best.ret } : null,
     };
   }).sort((a, b) => b.removed - a.removed);
@@ -69,7 +69,7 @@ export function backtest(ruleSet, history, names = {}, opts = {}) {
       keptBeatYears: years.filter(y => y.keptAvg != null && y.keptAvg > y.nifty).length, yearsCount: years.length,
       keptRight: log.filter(l => l.action === 'keep' && l.correct).length, keptTotal: log.filter(l => l.action === 'keep').length,
       growth: { kept: Math.round(keptGrowth), nifty: Math.round(niftyGrowth) },
-      worstAvoided: worst ? { symbol: worst.symbol, name: worst.name, year: worst.year, ret: worst.next12 } : null,
+      worstAvoided: worst ? { symbol: worst.symbol, name: worst.name, year: worst.year, ret: worst.next12, delisted: worst.next12 <= -99.5 } : null, // a -100% "return" is a delisting, shown as such
     },
   };
 }

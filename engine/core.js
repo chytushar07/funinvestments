@@ -347,7 +347,8 @@ function settleOrderAlerts(st) {
     const base = al.text.replace(/ · (sell order|replacement|sell and replacement) ready to review$/, '');
     al.text = /^back to /.test(how) ? `${base.replace(/ → ✕ Sell$/, '')} is ${how}` : `${base} · ${how}`;
     al.settled = { how, at: st.clock, ids: al.action.ids };
-    al.action = null; al.read = true; al.critical = false; // settled: nothing urgent is left to do
+    al.action = null; al.critical = false; // settled: nothing urgent is left to do
+    al.read = /^back to /.test(how) ? false : true; // a recovery is news; a decision the person just made is not
   }
 }
 
@@ -437,6 +438,10 @@ export function checkBasket(st, b, kind) {
       }
     } else {
       for (const o of staleSells) cancelOrder(st, o, `Back to ${STATUS_WORD[s.status]} before it was confirmed`);
+      // The Sell alert of that order is settled into "<name> is back to Buy · sell order cancelled" and moved to the
+      // top: one notification for the recovery, not two.
+      const sellAlert = staleSells.length && st.alerts.find(a => a.action?.kind === 'orders' && a.action.ids.some(id => staleSells.some(o => o.id === id)));
+      if (sellAlert) { st.alerts = [sellAlert, ...st.alerts.filter(a => a !== sellAlert)]; sellAlert.date = st.clock; sellAlert.why = [...why, ...(sellAlert.why || [])]; continue; }
       addAlert(st, { basketId: b.id, symbol: sym, type: 'status', text: `${name} ${STATUS_LABEL[prev] || '—'} → ${STATUS_LABEL[s.status]}${staleSells.length ? ' · sell order cancelled' : ''}`, why });
     }
   }

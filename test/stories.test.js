@@ -34,7 +34,9 @@ test('Story 1: a daily dip is a heads-up, a second strike is Sell + sell, a reco
   S.ok('advance_day', {}, 'you'); // trading back to normal before the person confirmed
   assert.equal(sell.status, 'cancelled', 'stale rules sell cancelled');
   assert.equal(bk.statusPrev.KIRLPNU, 'pass');
-  assert.ok(!al.action, 'alert settled'); assert.match(al.text, /sell order cancelled/);
+  assert.ok(!al.action, 'alert settled'); assert.match(al.text, /Kirloskar Pneumatic is back to Buy · sell order cancelled/);
+  assert.equal(S.st.alerts.filter(a => a.symbol === 'KIRLPNU' && /Buy/.test(a.text) && a.date === S.st.clock).length, 1, 'one notification for the recovery');
+  assert.equal(S.st.alerts[0], al, 'on top, unread'); assert.equal(al.read, false);
 });
 
 test('Story 2: the replacement comes with the rules sell; keep anyway settles both and is not re-drafted', () => {
