@@ -664,6 +664,9 @@ const PLAN_ROWS = [
 const cell = v => (v === true ? html`<span class="ok" aria-label="Included">✓</span>` : v === false ? html`<span class="faint" aria-label="Not included">—</span>` : v);
 const toConnect = () => { go('account'); setTimeout(() => document.getElementById('connect-claude')?.scrollIntoView({ behavior: 'smooth' }), 150); };
 
+// Product trailer (YouTube, privacy-enhanced embed).
+const TRAILER = 'https://www.youtube-nocookie.com/embed/6TUytGSzSUw?rel=0&modestbranding=1&playsinline=1';
+
 export function About() {
   const S = store.S, P = S.planInfo, pro = S.plan === 'pro';
   const first = S.baskets.length === 0;
@@ -692,6 +695,12 @@ export function About() {
     <section class="section about-plans" id="plans"><div class="section-head"><h2>Plans and prices <${Info} k="plandemo"/></h2><${PlanSwitch}/></div>
       <${PlansTable}/></section>
     <${ConnectCard}/>
+    <section class="section trailer" aria-label="Trailer">
+      <div class="section-head"><div><span class="eyebrow">Trailer</span><h2 style="margin-top:4px">See FunInvestments in action</h2></div></div>
+      <div class="trailer-frame"><iframe src=${TRAILER} title="FunInvestments trailer" loading="lazy"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
+    </section>
   </div>`;
 }
 
