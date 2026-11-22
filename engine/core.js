@@ -572,21 +572,25 @@ export function drift(st, b) {
   // A held stock the rules rate Sell is the rules' business (a sell order, or "keep anyway"), not rebalancing's:
   // it is left out of the mix and of the value the targets are shared from.
   const sellHeld = b.symbols.filter(s => (b.holdings[s]?.qty || 0) > 0 && scoreIn(st, b, s, b.statusPrev[s])?.status === 'remove');
-  const value = (basketValue(st, b) - sellHeld.reduce((t, s) => t + b.holdings[s].qty * (st.prices[s] ?? 0), 0)) || 1;
+  const held0 = (basketValue(st, b) - sellHeld.reduce((t, s) => t + b.holdings[s].qty * (st.prices[s] ?? 0), 0)) || 1;
   const held = b.symbols.filter(s => (b.holdings[s]?.qty || 0) > 0);
   let set = b.symbols.filter(s => !sellHeld.includes(s));
   let tw = targetWeights(st, b, set);
+  // The plan can keep some money uninvested (the per-stock caps leave a share of it over). That planned cash is part
+  // of the whole, so the stocks are measured against the whole, not against the shares alone.
+  const whole = () => held0 / (1 - Math.min(99, tw.cash) / 100);
+  let value = whole();
   for (let i = 0; i < 20; i++) {
     const out = set.filter(s => !held.includes(s) && tw.weights[s] > 0 && st.prices[s] > (value * tw.weights[s]) / 100);
     if (!out.length) break;
-    set = set.filter(s => !out.includes(s)); tw = targetWeights(st, b, set);
+    set = set.filter(s => !out.includes(s)); tw = targetWeights(st, b, set); value = whole();
   }
   const rows = b.symbols.filter(s => !sellHeld.includes(s)).map(s => {
     const actual = r2(((b.holdings[s]?.qty || 0) * st.prices[s] / value) * 100);
     const target = set.includes(s) ? tw.weights[s] || 0 : 0;
     return { symbol: s, name: st.universe[s]?.name, actual, target, diff: r2(actual - target), price: st.prices[s], held: b.holdings[s]?.qty || 0 };
   });
-  return { rows, max: rows.reduce((m, r) => Math.max(m, Math.abs(r.diff)), 0), cashTarget: tw.cash, value };
+  return { rows, max: rows.reduce((m, r) => Math.max(m, Math.abs(r.diff)), 0), cashTarget: tw.cash, value: r2(value) };
 }
 // The trades that bring a basket back to its targets, in whole shares. A row moves only when
 // a whole number of shares really gets it closer (no 1-share churn from rounding).
@@ -736,9 +740,6 @@ export function basketView(st, b) {
     unread: st.alerts.filter(a => a.basketId === b.id && !a.read).length,
     ...(() => { if (!isInv || b.kind !== 'model') return { drift: 0, needsRebalance: false }; const rb = rebalanceTrades(st, b); return { drift: r2(rb.max), needsRebalance: rb.needed }; })(),
     held: Object.values(b.holdings).filter(h => h.qty > 0).length,
-    addBlock: b.kind === 'model' ? addBlocks(st, b) : {},
-    // How this basket's own rules (and theme) rate stocks not in it, for its "Add stocks" picker.
-    rateHere: b.kind === 'model' ? Object.fromEntries(Object.keys(st.universe).filter(x => !b.symbols.includes(x)).map(x => { const r = scoreIn(st, b, x); return [x, { status: r.status, points: r.points, reason: r.reasons[0] || null }]; })) : {},
   };
 }
 

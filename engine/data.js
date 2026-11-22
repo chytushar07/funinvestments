@@ -369,8 +369,8 @@ export function buildUniverse() {
     };
   }
   // Demo story: the 14 Oct results push Precision Wires' debt up. It starts from its real debt/equity.
-  u.PRECWIRE.metrics.de = ORIG_REAL.PRECWIRE?.[0].de ?? 0.82;
-  if (ORIG_REAL.PRECWIRE?.[0].de != null) u.PRECWIRE.mock = u.PRECWIRE.mock.filter(x => x !== 'de');
+  // Demo story: debt is 0.82× before the October filing (sample number, so it stays marked as sample).
+  u.PRECWIRE.metrics.de = 0.82;
   for (const st of NEW_STOCKS) {
     const r = rng('today' + st.symbol);
     const metrics = {}; const mock = [];

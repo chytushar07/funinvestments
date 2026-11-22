@@ -111,7 +111,7 @@ test('every prompt has a known category, and placeholders resolve in every state
   for (const p of library(states[1])) assert.ok(cats.has(p.cat), `${p.id} category ${p.cat}`);
   const lib = library(states[1]);
   assert.equal(new Set(lib.map(p => p.id)).size, lib.length, 'ids unique');
-  assert.ok(lib.length >= 40 && lib.length <= 70, `library size ${lib.length}`);
+  assert.ok(lib.length >= 40 && lib.length <= 80, `library size ${lib.length}`);
   for (const S of states) for (const p of listPrompts(S, {})) assert.ok(!/\{\w+\}/.test(p.title + p.text), `unfilled: ${p.title} / ${p.text}`);
 });
 

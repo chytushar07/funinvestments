@@ -10,11 +10,16 @@ const AC = ['SRF', 'NAVINFLUOR', 'HAVELLS', 'VOLTAS', 'KIRLPNU', 'PRECWIRE'];
 const word = { pass: 'Buy', watch: 'Hold', remove: 'Sell' };
 
 // Every rating the website shows, from one snapshot.
+// Explore and the pickers page through the whole stock list (get_universe), not the snapshot on get_state.
+function allStocks(st) {
+  const out = []; let offset = 0;
+  for (;;) { const p = ok(dispatch(st, 'get_universe', { offset, limit: 100 }, 'claude')); out.push(...p.stocks); if (p.next_offset == null) return out; offset = p.next_offset; }
+}
 function shown(st) {
   const s = ok(dispatch(st, 'get_state', {}, 'you'));
   return {
-    explore: Object.fromEntries(s.universe.map(u => [u.symbol, u.status])),
-    baskets: Object.fromEntries(s.baskets.map(b => [b.id, { tags: Object.fromEntries(b.stocks.map(x => [x.symbol, x.status])), counts: b.counts, value: b.value, here: b.rateHere }])),
+    explore: Object.fromEntries(allStocks(st).map(u => [u.symbol, u.status])),
+    baskets: Object.fromEntries(s.baskets.map(b => [b.id, { tags: Object.fromEntries(b.stocks.map(x => [x.symbol, x.status])), counts: b.counts, value: b.value }])),
     s,
   };
 }
@@ -77,7 +82,9 @@ test('a basket\'s own rules → its tags, counts, picker ratings and alerts; oth
   assert.deepEqual(after.explore, before.explore);
   assert.deepEqual(after.baskets[b.id].tags, before.baskets[b.id].tags);
   assert.ok(!st.baskets.find(x => x.id === a.id).symbols.includes('PRECWIRE'), 'not invested: taken out');
-  assert.equal(after.baskets[a.id].here.PRECWIRE.status, 'remove', 'its Add picker rates by its own rules');
+  // The Add picker asks for ratings by this basket's own rules (its own page of the list, not the polled state).
+  const picker = ok(dispatch(st, 'get_universe', { basket_id: a.id, q: 'PRECWIRE', limit: 5 }, 'claude')).stocks.find(x => x.symbol === 'PRECWIRE');
+  assert.equal(picker.status, 'remove', 'its Add picker rates by its own rules');
   assert.ok('PRECWIRE' in after.baskets[b.id].tags, 'B still has it');
   assert.ok(st.alerts.some(x => x.basketId === a.id && /Precision Wires/.test(x.text)));
 });

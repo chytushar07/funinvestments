@@ -75,7 +75,7 @@ test('A declined replacement is not re-drafted every day', () => {
 
 test('Story 4: a news flag the results do not confirm cancels its sell and clears; flags never orphan the to-do', () => {
   const S = mk('pro');
-  const b = S.ok('create_basket', { name: 'Mixed', theme: null, symbols: ['NTPC', 'TORNTPOWER', 'COALINDIA', 'SRF', 'HAVELLS', 'RELIANCE'] }).basket;
+  const b = S.ok('create_basket', { name: 'Mixed', theme: null, symbols: ['MARUTI', 'APOLLOHOSP', 'COALINDIA', 'SRF', 'HAVELLS', 'RELIANCE'] }).basket; // all rated Buy on the real numbers
   invest(S, b.id);
   const f = S.ok('add_news_flag', { symbol: 'RELIANCE', metric: 'de', impact: 'worse', note: 'Merger' });
   assert.equal(f.drafted_orders.length, 1); const sell = f.drafted_orders[0];
@@ -104,9 +104,9 @@ test('Story 4: confirmed by results, the sell stays', () => {
 
 test('Custom themes and stage-less candidates are not squeezed by segment caps', () => {
   const S = mk('pro');
-  for (const [s, n] of [['HAL', 'Hindustan Aeronautics'], ['BEL', 'Bharat Electronics'], ['BDL', 'Bharat Dynamics'], ['MAZDOCK', 'Mazagon Dock'], ['COCHINSHIP', 'Cochin Shipyard'], ['DATAPATTNS', 'Data Patterns'], ['GRSE', 'Garden Reach']])
+  for (const [s, n] of [['DEFA', 'Hindustan Aeronautics'], ['DEFB', 'Bharat Electronics'], ['DEFC', 'Bharat Dynamics'], ['DEFD', 'Mazagon Dock'], ['DEFE', 'Cochin Shipyard'], ['DEFF', 'Data Patterns'], ['DEFG', 'Garden Reach']])
     S.ok('add_candidate', { symbol: s, name: n, sector: 'Defence', metrics: { adtv: 50, pledge: 0, de: 0.1, icr: 20, loss: 0, vol: 25, beta: 0.9, dd: 20, cash: 1, roe: 20, margin: 1, pe: 30, peg: 1.5 } });
-  const r = S.ok('create_basket', { name: 'Defence', theme_name: 'Defence', symbols: ['HAL', 'BEL', 'BDL', 'MAZDOCK', 'COCHINSHIP', 'DATAPATTNS', 'GRSE'] });
+  const r = S.ok('create_basket', { name: 'Defence', theme_name: 'Defence', symbols: ['DEFA', 'DEFB', 'DEFC', 'DEFD', 'DEFE', 'DEFF', 'DEFG'] });
   assert.equal(r.basket.count, 7, JSON.stringify(r.skipped)); assert.equal(r.basket.themeLabel, 'Defence');
   assert.equal(S.code('add_candidate', { symbol: 'NTPC', metrics: { de: 0.1 } }), 'exists', 'built-in stocks are not overwritten');
 });
