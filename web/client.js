@@ -1,7 +1,9 @@
 // Two doors, one engine. Server mode: website calls /api/<op>, Claude calls /mcp.
 // Standalone mode (no server, e.g. a shared link): the same engine runs in the browser.
-import { createState, dispatch } from './engine/core.js';
 import { TOOLS } from './engine/tools.js';
+// The engine (with the ~660-stock data) only loads in standalone mode; with a server it stays on the server.
+let createState, dispatch, packState, unpackState;
+const loadEngine = async () => { ({ createState, dispatch, packState, unpackState } = await import('./engine/core.js')); };
 
 const KEY = 'fi_state_v4';
 const SPACE_KEY = 'fi_space_key'; // this visitor's private-space key (hosted app only)
@@ -22,10 +24,10 @@ function keyFromLink() {
 }
 
 function loadLocal() {
-  try { const raw = localStorage.getItem(KEY); if (raw) { const s = JSON.parse(raw); if (s.v === createState().v) return s; } } catch { /* storage blocked */ }
+  try { const raw = localStorage.getItem(KEY); if (raw) { const s = JSON.parse(raw); if (s.v === createState().v) return unpackState(s); } } catch { /* storage blocked */ }
   return createState();
 }
-function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch { /* ignore */ } }
+function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(packState(st))); } catch { /* ignore */ } }
 
 export async function init() {
   spaceKey = keyFromLink() || readSpaceKey();
@@ -41,6 +43,7 @@ export async function init() {
       }
     }
   } catch { /* standalone */ }
+  await loadEngine();
   st = loadLocal();
   return mode;
 }

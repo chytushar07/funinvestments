@@ -39,12 +39,17 @@ test('mock data: AC statuses match the research doc (with the AC theme rule)', (
   for (const r of ['RAMRAT', 'HIRECT', 'EMIL', 'AMBER', 'JCHAC', 'PGEL', 'EPACK', 'ICEMAKE', 'HINDALCO', 'IFBIND']) assert.equal(s(r), 'remove', r);
 });
 
-test('backtest: default AC rules reproduce the doc yearly figures', () => {
+test('backtest: AC past test runs on real June-to-June returns and the real Nifty 50', () => {
   const bt = backtest(defaultRuleSet(), HISTORY, {}, { theme: 'ac', minTheme: 20 });
   const y = Object.fromEntries(bt.years.map(r => [r.year, r]));
-  assert.equal(y[2018].keptAvg, 26); assert.equal(y[2018].removedAvg, -29);
-  assert.equal(y[2020].removedAvg, 179); assert.equal(y[2022].removedRight, 0);
-  assert.equal(bt.summary.keptBeatYears, 7);
+  assert.deepEqual(bt.years.map(r => r.year), [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]);
+  assert.equal(y[2020].nifty, 60.1, 'Nifty 50 June 2020 → June 2021, with dividends');
+  assert.equal(y[2019].nifty, -17.5);
+  // AC rows carry the real NSE return wherever NSE traded the stock on both Junes (a few traded only on BSE then).
+  const ac = HISTORY.rows[2023].filter(r => r.theme === 'ac');
+  assert.ok(ac.filter(r => r.real).length >= ac.length - 3, 'mostly real');
+  assert.ok(HISTORY.rows[2023].find(r => r.symbol === 'SRF').real);
+  assert.ok(bt.summary.removalsTotal > 20 && bt.summary.keptTotal > 50);
   assert.equal(bt.summary.worstAvoided.symbol, 'FEDDERS');
 });
 
@@ -58,7 +63,7 @@ test('universe: energy + profitable filter', () => {
 
 test('per-basket rules: an energy basket with strict loss rule', () => {
   const st = createState(); st.plan = 'pro';
-  const b = ok(dispatch(st, 'create_basket', { name: 'Profitable energy', symbols: ['NTPC', 'SUZLON', 'COALINDIA', 'PETRONET', 'GAIL', 'POWERGRID'], rules: { loss: { green: 0, red: 0 } } }, 'claude'));
+  const b = ok(dispatch(st, 'create_basket', { name: 'Profitable energy', symbols: ['ADANIPOWER', 'SUZLON', 'COALINDIA', 'PETRONET', 'GAIL', 'WAAREEENER'], rules: { loss: { green: 0, red: 0 } } }, 'claude'));
   assert.equal(b.basket.theme, 'energy');
   assert.ok(b.skipped.some(s => s.symbol === 'SUZLON'));
   assert.equal(b.basket.rules.metrics.find(r => r.id === 'loss').red, 0);
@@ -300,7 +305,7 @@ test('exit basket: sells everything, cancels pending orders, returns cash, keeps
 
 test('activity: every Claude call is logged in plain words; to-do shows what the user must do', () => {
   const st = createState();
-  const b = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'PREMIERENE'] }, 'claude')).basket;
+  const b = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['ADANIPOWER', 'WAAREEENER', 'COALINDIA', 'PETRONET', 'GAIL', 'PREMIERENE'] }, 'claude')).basket;
   ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 50000 }, 'claude'));
   dispatch(st, 'delete_basket', { basket_id: b.id }, 'claude');
   dispatch(st, 'get_basket_status', {}, 'you'); // the website's own reads are not Claude activity
@@ -330,7 +335,7 @@ test('Claude connection status: only Claude calls connect; every call stamps whe
   const st = createState();
   let s = ok(dispatch(st, 'get_state', {}, 'you'));
   assert.equal(s.claudeConnected, false); assert.equal(s.lastClaudeCall, null);
-  ok(dispatch(st, 'create_basket', { name: 'Mine', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'PREMIERENE'] }, 'you'));
+  ok(dispatch(st, 'create_basket', { name: 'Mine', symbols: ['ADANIPOWER', 'WAAREEENER', 'COALINDIA', 'PETRONET', 'GAIL', 'PREMIERENE'] }, 'you'));
   assert.equal(ok(dispatch(st, 'get_state', {}, 'you')).claudeConnected, false, 'the website\'s own actions never count');
   ok(dispatch(st, 'get_activity', {}, 'claude'));
   s = ok(dispatch(st, 'get_state', {}, 'you'));
@@ -345,7 +350,7 @@ test('Claude connection status: only Claude calls connect; every call stamps whe
 
 test('activity: the user\'s own actions are logged as "you", look-ups never crowd out actions, settled drafts stop asking', () => {
   const st = createState();
-  const b = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'PREMIERENE'] }, 'you')).basket;
+  const b = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['ADANIPOWER', 'WAAREEENER', 'COALINDIA', 'PETRONET', 'GAIL', 'PREMIERENE'] }, 'you')).basket;
   const drafted = ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 50000 }, 'claude')).orders;
   let S = ok(dispatch(st, 'get_state', {}, 'you'));
   assert.equal(S.activity[0].actor, 'claude'); assert.equal(S.activity[0].pending, true, 'Claude\'s draft still waits for the user');
@@ -371,7 +376,7 @@ test('activity: the user\'s own actions are logged as "you", look-ups never crow
 test('to-do: most urgent first, and an alert stops being a to-do once its order is confirmed or cancelled', () => {
   const st = createState();
   const todo = () => ok(dispatch(st, 'get_state', {}, 'you')).todo;
-  const a = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'PETRONET', 'GAIL', 'RELIANCE'] }, 'you')).basket;
+  const a = ok(dispatch(st, 'create_basket', { name: 'Energy', symbols: ['ADANIPOWER', 'WAAREEENER', 'COALINDIA', 'PETRONET', 'GAIL', 'RELIANCE'] }, 'you')).basket;
   assert.deepEqual(todo().map(t => t.kind), ['basket'], '5 of the 6 fit the segment limit: one short of the minimum');
   for (const x of st.baskets) x.limits.minStocks = 5;
   assert.deepEqual(todo().map(t => t.kind), ['invest']);
@@ -384,7 +389,7 @@ test('to-do: most urgent first, and an alert stops being a to-do once its order 
   assert.deepEqual(t.map(x => x.kind), ['orders', 'flags'], 'the urgent alert is covered by its sell order, not listed twice');
   assert.equal(t[0].priority, 0); assert.deepEqual(t[0].ids, [flag.drafted_orders[0].id]);
   ok(dispatch(st, 'set_plan', { plan: 'pro' }, 'you'));
-  const b = ok(dispatch(st, 'create_basket', { name: 'Second', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'GAIL', 'RELIANCE', 'ONGC'] }, 'you')).basket;
+  const b = ok(dispatch(st, 'create_basket', { name: 'Second', symbols: ['ADANIPOWER', 'WAAREEENER', 'COALINDIA', 'GAIL', 'RELIANCE', 'ONGC'] }, 'you')).basket;
   for (const x of st.baskets) x.limits.minStocks = Math.min(x.limits.minStocks, x.symbols.length);
   ok(dispatch(st, 'create_order', { basket_id: b.id, side: 'buy', amount: 20000 }, 'claude'));
   t = todo();
@@ -424,7 +429,7 @@ test('rules can be edited per basket, as defaults, or everywhere (and with no ba
   r = dispatch(st, 'set_rule', { rule_id: 'de', green: 0.4, red: 0.9 }, 'claude');
   assert.equal(r.ok, true); assert.equal(st.rules.metrics.find(x => x.id === 'de').green, 0.4);
   // New baskets start with the edited defaults
-  const b1 = dispatch(st, 'create_basket', { name: 'One', symbols: ['NTPC', 'POWERGRID', 'COALINDIA', 'ONGC', 'GAIL', 'PETRONET'] }, 'you').data.basket;
+  const b1 = dispatch(st, 'create_basket', { name: 'One', symbols: ['ADANIPOWER', 'WAAREEENER', 'COALINDIA', 'ONGC', 'GAIL', 'PETRONET'] }, 'you').data.basket;
   const b2 = dispatch(st, 'create_basket', { name: 'Two', symbols: ['SRF', 'HAVELLS', 'BLUESTARCO', 'VOLTAS', 'KIRLPNU', 'NAVINFLUOR'] }, 'you').data.basket;
   const rulesOf = id => st.baskets.find(b => b.id === id).rules;
   assert.equal(rulesOf(b1.id).metrics.find(x => x.id === 'de').green, 0.4);

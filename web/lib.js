@@ -1,5 +1,6 @@
 // Shared helpers and small components.
 import { html, useState, useEffect, useRef } from './vendor/preact-htm.js';
+import { store, read } from './store.js';
 
 export const inr = v => (v == null ? '—' : '₹' + Math.round(v).toLocaleString('en-IN'));
 export const inr2 = v => (v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -15,7 +16,7 @@ export const STATUS = { pass: ['✓', 'Buy'], watch: ['=', 'Hold'], remove: ['�
 export const Pill = ({ s, n }) => (s ? html`<span class="pill ${s}"><span aria-hidden="true">${STATUS[s][0]}</span>${n != null ? `${n} ` : ''}${STATUS[s][1]}</span>` : null);
 export const Src = ({ s, edited }) => (s === 'claude' ? html`<span class="tag claude">${edited ? 'Edited by Claude' : 'By Claude'}</span>` : s === 'you' ? html`<span class="tag">${edited ? 'Edited by you' : 'By you'}</span>` : s === 'rules' ? html`<span class="tag">By rules</span>` : null);
 export const Avatar = ({ name, stage, cls: c = '' }) => html`<span class="avatar st-${stage || 'parts'} ${c}" aria-hidden="true">${initials(name)}</span>`;
-export const Mock = () => html`<span class="mocktag" title="All prices and metrics are mock data">Mock data</span>`;
+export const Mock = () => html`<span class="mocktag" title="Prices and price history are real NSE closes (9 Nov 2026), moved by a practice clock after that. Rule numbers marked 'sample' are made-up stand-ins where no real figure was found.">Practice data</span>`;
 export const Chg = ({ v, d = 2 }) => html`<span class="${cls(v)} num">${pct(v, d)}</span>`;
 
 export const I = {
@@ -95,4 +96,44 @@ export function ProLock({ label, onTap }) {
 
 export function Empty({ title, children }) {
   return html`<div class="empty"><b>${title}</b>${children}</div>`;
+}
+
+// The stock list (660 stocks) lives on the server: screens ask for one filtered, sorted page at a time and
+// "Show more" loads the next. It is asked again whenever the app state changes (store.rev), so ratings always
+// follow the current rules, and while typing it waits a moment so a search sends one request, not one per key.
+const PAGE = 40;
+export function useUniverse(args, { on = true, page = PAGE } = {}) {
+  const [data, setData] = useState(null);
+  const [want, setWant] = useState(page);
+  const [busy, setBusy] = useState(false);
+  const key = JSON.stringify(args);
+  const seq = useRef(0);
+  useEffect(() => { setWant(page); }, [key]);
+  useEffect(() => {
+    if (!on) return undefined;
+    const mine = ++seq.current;
+    const run = async () => {
+      setBusy(true);
+      const out = []; let res = null;
+      for (let offset = 0; offset < want; offset += 100) {
+        const r = await read('get_universe', { ...args, offset, limit: Math.min(100, want - offset), no_filters: true });
+        if (mine !== seq.current) return;
+        if (!r.ok) break;
+        res = r.data; out.push(...r.data.stocks);
+        if (r.data.next_offset == null) break;
+      }
+      if (mine !== seq.current) return;
+      setBusy(false);
+      if (res) setData({ ...res, stocks: out });
+    };
+    const t = setTimeout(run, args?.q ? 220 : 0);
+    return () => clearTimeout(t);
+  }, [key, want, store.rev, on]);
+  const more = data && data.count > data.stocks.length ? () => setWant(w => w + page) : null;
+  return { data, list: data?.stocks || [], count: data?.count ?? null, more, busy, loading: !data };
+}
+export function ShowMore({ u, label = 'stocks' }) {
+  if (!u.data) return null;
+  const left = u.count - u.list.length;
+  return html`<div class="showmore">${u.more ? html`<button class="btn ghost block" disabled=${u.busy} onClick=${u.more}>Show ${Math.min(PAGE, left)} more · ${u.list.length} of ${u.count} ${label}</button>` : u.count > PAGE ? html`<span class="faint" style="font-size:12.5px">All ${u.count} ${label} shown</span>` : null}</div>`;
 }

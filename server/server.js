@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { createState, dispatch } from '../engine/core.js';
+import { createState, dispatch, packState, unpackState } from '../engine/core.js';
 import { TOOLS } from '../engine/tools.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,10 +20,10 @@ let state = load();
 let rev = 1;
 function fresh() { const s = createState(); s.user.apiKey = API_KEY; return s; }
 function load() {
-  try { const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); if (s.v !== createState().v) return fresh(); s.user.apiKey = API_KEY; return s; } catch { return fresh(); }
+  try { const s0 = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); if (s0.v !== createState().v) return fresh(); const s = unpackState(s0); s.user.apiKey = API_KEY; return s; } catch { return fresh(); }
 }
 function save() {
-  try { fs.mkdirSync(DATA, { recursive: true }); fs.writeFileSync(STATE_FILE, JSON.stringify(state)); }
+  try { fs.mkdirSync(DATA, { recursive: true }); fs.writeFileSync(STATE_FILE, JSON.stringify(packState(state))); }
   catch (e) { console.error('Could not save state:', e.message); }
 }
 

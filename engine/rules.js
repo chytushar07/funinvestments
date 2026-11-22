@@ -64,6 +64,7 @@ export function scoreStock(stock, ruleSet, opts = {}) {
   const res = { points: 0, criticalReds: [], reds: [], ambers: [], missing: [], events: [], bands: {}, status: 'pass', reasons: [] };
   for (const r of ruleSet.metrics) {
     if (!r.enabled) continue;
+    if (stock.na?.includes(r.id)) { res.bands[r.id] = 'na'; continue; } // doesn't apply (e.g. debt/equity for a bank)
     const b = band(r, stock.metrics?.[r.id]);
     res.bands[r.id] = b;
     if (b === 'missing') { res.missing.push(r.id); continue; }
