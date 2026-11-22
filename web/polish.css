@@ -34,4 +34,4 @@
 /* Stock cards: the warnings count never wraps; a long sector is cut with "…" instead of squeezing it. */
 .scard .foot { gap: 6px; min-width: 0; }
 .scard .foot .pts { white-space: nowrap; flex: none; }
-.scard .foot > .faint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.scard .foot > .faint { min-width: 0; text-align: right; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
