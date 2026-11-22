@@ -54,7 +54,7 @@ await journey('2. Create basket in the UI (validation, pick, paste)', async () =
   await tap('Create basket');
   check('create disabled with nothing picked', await disabled('Create basket'));
   await type('#nb-name', 'UI basket');
-  for (const s of AC) { await type('#nb-q', s); const [row] = await p.$$(`xpath/.//div[contains(@class,"sheet")]//button[contains(@class,"btnrow")]`); await row.click(); await wait(200); }
+  for (const s of AC) { await type("#nb-q", s); await wait(500); const [row] = await p.$$(`xpath/.//div[contains(@class,"sheet")]//button[contains(@class,"btnrow")]`); await row.evaluate(e => e.scrollIntoView({ block: 'center' })); await wait(150); await row.click(); await wait(300); }
   await tap('Create basket');
   let st = await S(); const bk = st.baskets.find(x => x.name === 'UI basket');
   check('basket saved with 6 stocks', bk?.count === 6, JSON.stringify(st.baskets.map(x => [x.name, x.count])));
@@ -63,7 +63,7 @@ await journey('2. Create basket in the UI (validation, pick, paste)', async () =
   await tap('Paste symbols'); await type('#nb-name', 'Pasted'); await type('#nb-paste', 'ntpc, torntpower coalindia;PETRONET OIL premierene FOOBAR');
   await tap('Create basket');
   st = await S(); const pb = st.baskets.find(x => x.name === 'Pasted');
-  check('paste: lowercase/mixed separators parsed, unknown skipped', pb?.count === 6, JSON.stringify(pb?.stocks.map(s => s.symbol)));
+  check('paste: lowercase/mixed separators parsed, Sell and unknown skipped (NTPC, TORNTPOWER are Sell on real debt)', pb?.count === 4 && !pb?.stocks.some(s => ['NTPC','TORNTPOWER'].includes(s.symbol)), JSON.stringify(pb?.stocks.map(s => s.symbol)));
   check('result explains skipped symbol', /FOOBAR/.test(await text()));
 });
 
@@ -102,7 +102,7 @@ await journey('5. Stock page: buy, sell, add to another basket, flag + withdraw'
   check('buy then sell changed holding', h1 > 0 && h2 < h1, `${h1} -> ${h2}`);
   await reload('stock-NTPC'); await tap('Add to basket');
   const added = await tap('Add', 'sheet', { optional: true });
-  check('add-to sheet works (or says already in)', added || /Already in/.test(await text()));
+  check('add-to sheet works, or says why not (NTPC is Sell: no known theme share)', added || /Already in|Can't add/.test(await text()));
   await closeSheet();
   await reload('stock-HAVELLS'); await tap('Flag', 'page');
   await tap('Debt vs equity'); await type('#fl-note', 'Borrowings up'); await tap('Flag', 'sheet');
