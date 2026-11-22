@@ -9,6 +9,8 @@
 .topbar .brand { min-width: 0; padding: 0; font-size: clamp(13px, 3.6vw, 16px); gap: 7px; }
 .topbar .logo { width: 26px; height: 26px; }
 .topbar .brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Below the desktop rail the bar may wrap: the full app name keeps its width and the clock moves to the next line instead of cutting the name. */
+@media (max-width: 999px) { .topbar { flex-wrap: wrap; row-gap: 8px; } .topbar .brand { flex: 0 0 auto; } .topbar .spacer { display: none; } .topbar .clock { order: 9; flex: 1 0 100%; justify-content: space-between; } }
 .clock { position: relative; flex: none; padding: 4px; gap: 4px; }
 .clock .clock-date { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 4px 5px 8px; background: none; color: inherit; line-height: 1.1; }
 .clock .clock-date .num { font-size: 12.5px; font-weight: 700; }
